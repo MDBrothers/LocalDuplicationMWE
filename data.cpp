@@ -164,11 +164,7 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 		 *
 		 */
 		// Solids distributed variables, owned
-    std::vector<std::string> OWNED_SOLIDS_VAR_NAMES = split(contentParams->get<std::string>("OWNED_SOLIDS_VAR_NAMES", "original_coordinates,current_coordinates,displacement,trial_displacement_increment,current_velocity,acceleration,force,reaction,residual,soln"), ',');
-		// Multiphysics distributed variables, owned
-    std::vector<std::string> OWNED_MULTIPHYS_VAR_NAMES = split(contentParams->get<std::string>("OWNED_MULTIPHYS_VAR_NAMES", "original_fluid_pressure,current_fluid_pressure,fluid_pressure_displacement,fluid_pressure_velocity,fluid_flow,reaction,residual,soln") , ',');
-		// Scalar distributed variable, owned
-    std::vector<std::string> OWNED_ANY_SCA_VAR_NAMES = split(contentParams->get<std::string>("OWNED_ANY_SCA_VAR_NAMES", ""), ',');
+    std::vector<std::string> OWNED_SOLIDS_VAR_NAMES = split(contentParams->get<std::string>("OWNED_SOLIDS_VAR_NAMES", "original_coordinates,current_coordinates,force"), ',');
 
 		/*
 		 *
@@ -185,13 +181,9 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 		 * variables that need be calculated but once are only stored as overlap.
 		 */
 		// Solids distributed variables, overlap
-    std::vector<std::string> OVERLAP_SOLIDS_VAR_NAMES = split(contentParams->get<std::string>("OVERLAP_SOLIDS_VAR_NAMES", "original_coordinates,current_coordinates,force,neighbor_force_reactions,current_bond_components"), ',');
-		// Multiphysics distributed variables, overlap
-		std::vector<std::string> OVERLAP_MULTIPHYS_VAR_NAMES = split(contentParams->get<std::string>("OVERLAP_MULTIPHYS_VAR_NAMES", "original_fluid_pressure,current_fluid_pressure,fluid_pressure_velocity,fluid_flow,neighbor_flow_reactions") , ',');
-		// Scalar distributed variables, overlap
-    std::vector<std::string> OVERLAP_ANY_SCA_VAR_NAMES = split(contentParams->get<std::string>("OVERLAP_ANY_SCA_VAR_NAMES", "cell_volumes,weighted_volumes,dilatation,previous_node_damage,current_node_damage,original_bond_length,current_bond_length,current_bond_extension,influence,previous_bond_damage,current_bond_damage"), ',');
-		// Global variables
-    std::vector<std::string> GLOBAL_VAR_NAMES = split(contentParams->get<std::string>("GLOBAL_VAR_NAMES", "previous_time,previous_time_increment,current_time_increment,relative_tolerance,num_nonlinear_iterations,num_linear_iterations"), ',');
+    std::vector<std::string> OVERLAP_SOLIDS_VAR_NAMES = split(contentParams->get<std::string>("OVERLAP_SOLIDS_VAR_WDUP_NAMES", "original_coordinates,current_coordinates,force"), ',');
+
+    std::vector<std::string> OVERLAP_SOLIDS_VAR_WDUP_NAMES = split(contentParams->get<std::string>("OVERLAP_SOLIDS_VAR_WDUP_NAMES", "original_coordinates,current_coordinates,force,neighbor_force_reactions"), ',');
 
     /*
      *
@@ -202,81 +194,6 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
     std::vector<double> verticesFlat; // verticesFlat contains all global vertices and is duplicated on every rank.
     specifyRectangularGrid(verticesFlat, DOTPITCH, NUM_OF_SOLIDS_COORD_N);
     std::vector<std::vector<double> > flannLocalDistances; // internal variable used by Flann
-
-		/* TODO: Alternative procedure: enables the specification of periodic bodies
-		 *
-		 * 			 Crudely partition the body. Use MSC method like below.
-		 *
-		 * 			 Next build neighborhoods as previously as written below, with traditional overlap. Use Flann for now.
-		 *
-		 * 			 Next, redistribute the neighborhoods with Issoropia per Peridigm and Jason's example.
-		 *
-		 * 			 Next identify surface nodes by their having fewer than the maximum number of neighbors. 
-		 * 			 This is permitted by the fact that the grid is uniform. This technique was Jason's invention.
-		 *
-		 * 			 Given the dimensionality of the body in solids space, imagine:
-		 *
-		 * 			 Rod: Two 'corners' nothing else
-		 *			 Plane: Four 'corners', four 'edges' nothing else
-		 *			 Cuboid: Eight 'corners', eight 'edges', fix 'faces'
-		 *
-		 * 			 // FILTER NODES BY THEIR LOCATION ON SURFACE
-		 *			 Identify edge coordinates by the dimensions of the body and register edge nodes by their edge from among
-		 *			 the surface nodes.
-		 *			 Identify corner coordinates by the dimensions of the body and register corner nodes by their corner from among the
-		 *			 surface nodes.
-		 *			 Identify face coordinates by the dimensions of the body and register face nodes by their face from among the
-		 *			 surface nodes.
-		 *
-		 * 			 // CACHE THE NEIGHBORHOODS OF THE FILTERED NODES
-		 * 			 Identify the neighborhoods of these identified owned nodes, and enumerate these neighborhoods by global index, 
-		 * 			 also associating them with their surface locations.
-		 *
-		 * 			 // SCHEDULE SURFACE LOCATION COMPARISONS BY OPPOSITION GROUP
-		 * 			 (Cube case)
-		 * 			 Identify opposing edges (all vertical edges are joined, all horizontal edges are joined)
-		 * 			 Identify opposing corners (all corners are joined)
-		 * 			 Identify opposing faces (faces are only paired with opposites)
-		 *
-		 * 			 // SCATTER ALL NODES PER OPPOSITION GROUP
-		 * 			 Consider each opposition group.
-		 * 			 For the processors having neighborhoods in an opposition group, give neighborhood global index information to 
-		 * 			 the other processors also having neighborhoods in that opposition group.
-		 *
-		 * 			 // GIVEN THE OPPOSITION GROUP, ASSIGN A PREDETERMINED TRANSLATION
-		 * 			 Compute translated position data for the opposition neighborhoods from other processors, 
-		 * 			 such that positions of other processors neighborhoods are placed
-		 * 			 one grid spacing in the opposition direction.
-		 *
-		 * 			 Keep a vector of moved global indices. Keep a vector of vectors to stores the movement vectors.
-		 * 			 Also keep their virtual positions for neighborhood search.
-		 *
-		 * 			 The movement vectors will be used to modify overlap original coordinates and overlap current coordinates. 
-		 * 			 We are lucky in that the sign of the displacements will still be valid.
-		 *
-		 * 			 // COMPUTE ADDITIONAL BONDS FOR THE ORIGINAL OWNED NODES
-		 * 			 Form special local indices for owned nodes and opposition nodes, and form neighborhoods in opposition groups.
-		 * 			 This will be done by sorting by owned vs opposition and storing in another vector compatible with Flann.
-		 * 			 
-		 * 			 Append all the neighbors formed into the existing owned neighborhoods.
-		 *
-		 *       Compute the unique neighbors for the new neighborhoods and only store those.
-		 *
-		 * 			 // FILL AN OVERLAP SOLIDS VECTOR WITH THE INFORMATION FROM MOVEMENT VECTORS
-		 * 			 Using the global index form of the neighborhood information, relate the global indices to the moved global indices, 
-		 * 			 populate the offset vector with the values from before that allowed new neighborhood formation.
-		 *
-		 * 			 These movement vectors will be applied to original_coordinates once at the start of the simulation, and to current_coordinates 
-		 * 			 after every scatter operation. No other variables need to be touched as fluid pressure coordinates will be preserved and all 
-		 * 			 other variables are in one way or other intermediate/ dependent.
-		 *
-		 * 			 // FREE UNUSED MEMORY
-		 *			 We can do away with all records of creating a periodic body except for a constant offsets vector. 
-		 *
-		 * 			 It may be faster to just apply the offsets blindly rather than store specific locations of moved global nodes and then
-		 * 			 selectively apply offset. This way array access stride is uniform and memory access is therefor sequential and vectorizable.
-		 *
-		 */
 
     /*
      *
