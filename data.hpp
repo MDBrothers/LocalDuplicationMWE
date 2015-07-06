@@ -203,6 +203,7 @@ ow				break;
 			}
 		};
 
+public:
 		// Scale the number of ticks counted all at once by the rational number representing the monotonic clock
 		// period.
 		void finaliseTimings(){
@@ -354,6 +355,7 @@ private:
 		Teuchos::RCP<Epetra_Export> myVecExporterSolids;
 		Teuchos::RCP<Epetra_Import> myVecImporterSolids;
 
+		// Node maps
     Teuchos::RCP<Epetra_BlockMap> ownedBlockMapSolids;
 
     Teuchos::RCP<Epetra_BlockMap> overlapBlockMapSolidsDuplicates;
@@ -397,12 +399,6 @@ public:
 		};
 		const long int getNumLocalOverlapDofs(){
 			return NUM_OVERLAP_DOFS;
-		};
-		const long int getNumGlobalBondsWithDuplicates(){
-			return NUM_GLOBAL_BONDS;
-		};
-		const long int getNumOwnedBondsWithDuplicates(){
-			return NUM_OWNED_BONDS;
 		};
 
 		/*
@@ -754,6 +750,61 @@ public:
         return epetraComm;
     };
 
+    double* queryEpetraDictForValues(const std::string& varName) {
+				tick(LOOKUP);
+				const std::unordered_map<std::string, int>::iterator myIndexMapIterator;
+				const std::pair<VARIABLE_ROLE, VARIABLE_NATURE> METADATA(varNameToVarArchetype(varName));
+				int index(-99);
+
+				switch(METADATA.first){
+					case OWNED:
+						switch(METADATA.second){
+							case NEW_SOLIDS:
+								myIndexMapIterator = ownedSolidsMothershipVectorIndexDict.find(varName);
+								if(myIndexMapIterator != ownedSolidsMothershipVectorIndexDict.end()){
+									index = it->second;
+									return (*ownedSolidsMultiVector)(index).Values();
+								}
+								break;
+								case OLD_SOLIDS:
+								myIndexMapIterator = ownedSolidsMothershipVectorIndexDict.find(varName);
+								if(myIndexMapIterator != ownedSolidsMothershipVectorIndexDict.end()){
+									index = it->second;
+									return (*overlapSolidsMultiVector)(index).Values();
+								}
+								break;
+								default:
+								std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_NATURE invalid or not well defined for " varName << std::endl;
+						}
+						break;
+					case OVERLAP:
+						switch(METADATA.second){
+							case NEW_SOLIDS:
+								myIndexMapIterator = overlapSolidsMothershipVectorWdupIndexDict.find(varName);
+if(myIndexMapIterator != overlapSolidsMothershipVectorWdupIndexDict.end()){
+									index = it->second;
+									return (*overlapSolidsMultiVector)(index).Values();
+								}
+
+								break;
+						case OLD_SOLIDS:
+								myIndexMapIterator = overlapSolidsMothershipVectorIndexDict.find(varName);
+								if(myIndexMapIterator != overlapSolidsMothershipVectorIndexDict.end()){
+									index = it->second;
+									return (*overlapSolidsMultiVector)(index).Values().Values();
+								}
+								break;
+							default:
+								std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_NATURE invalid or not well defined for " varName << std::endl;
+						}
+						break;
+					default:
+						std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_ROLE invalid or not well defined for " << varName << std::endl;
+				}
+				tock(LOOKUP);
+    };
+
+
 private:
 
     Epetra_Vector* queryEpetraDict(const std::string& varName) {
@@ -810,6 +861,7 @@ if(myIndexMapIterator != overlapSolidsMothershipVectorWdupIndexDict.end()){
 				tock(LOOKUP);
     };
 
+public:
     /*
      *
      * Constructors
