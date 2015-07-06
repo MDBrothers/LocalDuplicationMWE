@@ -1,0 +1,76 @@
+<ParameterList name="Main">
+<ParameterList name="Geometry">
+</ParameterList>
+<ParameterList name="Content">
+</ParameterList>
+<ParameterList name="Problem">
+<Parameter name="Final Time" type="double" value="1.0"/>
+<Parameter name="Number of Reported Steps" type="int" value="20"/>
+</ParameterList>
+
+<ParameterList  name="NOX">
+<ParameterList  name="Printing">
+<Parameter     name="Output Information" type="int" value="15"/>
+<Parameter     name="MyPID" type="int" value="0"/>
+<Parameter     name="Output Processor" type="int" value="0"/>
+<Parameter     name="Output Precision" type="int" value="3"/>
+</ParameterList>
+
+<ParameterList  name="Direction">
+<ParameterList  name="Newton">
+<ParameterList  name="Linear Solver">
+<Parameter name="Aztec Solver" type="string" value="GMRES"/>
+<Parameter name="Max Iterations" type="int" value="100"/>
+<Parameter name="Tolerance" type="double" value="1e-4"/>
+<Parameter name="Output Frequency" type="int" value="1"/>
+<Parameter name="Compute Scaling Manually" type="bool" value="false"/>
+<!--					<Parameter name="Preconditioner" type="string" value="AztecOO"/> -->
+<Parameter name="Jacobian Operator" type="string" value="Matrix-Free"/>
+<!-- <Parameter name="Preconditioner Operator" type="string" value="Finite Difference"/>
+<Parameter name="Aztec Preconditioner" type="string" value="ilut"/>
+<Parameter name="Overlap" type="int" value="2"/>
+<Parameter name="Fill Factor" type="double" value="1.0"/>
+<Parameter name="Drop Tolerance" type="double" value="1.0e-12"/> -->
+</ParameterList>
+</ParameterList>
+</ParameterList>
+</ParameterList>
+
+<ParameterList name="LOCA">
+<ParameterList  name="Stepper">
+<Parameter     name="Continuation Method" type="string" value="Arc Length"/>
+<Parameter     name="Continuation Parameter" type="string" value="fraction_of_current_reporting_interval"/>
+<Parameter     name="Initial Value" type="double" value="1.e-03"/>
+<Parameter     name="Max Value" type="double" value="1.0"/>
+			<Parameter     name="Min Value" type="double" value="1.e-12"/>
+							<Parameter     name="Max Steps" type="int" value="100"/>
+											<Parameter     name="Max Nonlinear Iterations" type="int" value="15"/>
+															<Parameter     name="Bordered Solver Method" type="string" value="Householder"/>
+																			<Parameter     name="Compute Eigenvalues" type="bool" value="true"/>
+																							<ParameterList  name="Eigensolver">
+																											<Parameter     name="Method" type="string" value="Anasazi"/>
+																															<Parameter     name="Block Size" type="int" value="1"/>
+																																			<Parameter     name="Num Blocks" type="int" value="10"/>
+																																							<Parameter     name="Num Eigenvalues" type="int" value="3"/>
+																																											<Parameter     name="Convergence Tolerance" type="double" value="1.99999999999999991e-07"/>
+																																															<Parameter     name="Step Size" type="int" value="1"/>
+																																																			<Parameter     name="Maximum Restarts" type="int" value="2"/>
+																																																							<Parameter     name="Verbosity" type="int" value="9"/>
+																																																											</ParameterList>
+																																																											</ParameterList>
+																																																											<ParameterList  name="Predictor">
+																																																															<Parameter     name="Method" type="string" value="Secant"/>
+																																																																			<ParameterList  name="First Step Predictor"/>
+																																																																							<ParameterList  name="Last Step Predictor"/>
+																																																																											</ParameterList>
+																																																																											<ParameterList  name="Step Size">
+																																																																															<Parameter     name="Method" type="string" value="Adaptive"/>
+																																																																																			<Parameter     name="Initial Step Size" type="double" value="1.e-03"/>
+																																																																																							<Parameter     name="Min Step Size" type="double" value="1.0e-12"/>
+																																																																																											<Parameter     name="Max Step Size" type="double" value="1.0"/>
+																																																																																															<Parameter     name="Aggressiveness" type="double" value="1.00000000000000006e-01"/>
+																																																																																																			</ParameterList>
+																																																																																																			<ParameterList  name="Constraints"/>
+																																																																																																							<ParameterList  name="Bifurcation"/>
+																																																																																																											</ParameterList>
+																																																																																																											</ParameterList>
