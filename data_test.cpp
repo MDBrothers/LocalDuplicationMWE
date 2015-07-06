@@ -1,135 +1,67 @@
 #include "main.hpp"
+#include "kernels.hpp"
+//GLOBALS
+const int NUM_ITERATIONS;
 
-void gatherScatterCheck(PrimaryNS::Data& data){
-		int comparisonFailed(0);
-		double *tempAccess, *previousOwnedOrigCoords;
-		const double TESTVAL(-999.999);
-		const double FACTOR(2.0);
-		const double TWICE_TESTVAL(-999.999*2.0);
+enum TIMER_CATEGORY{
+	OLD_GATHER,
+	OLD_SCATTER,
+	NEW_GATHER,
+	NEW_SCATTER,
+	OLD_KERNEL,
+	NEW_KERNEL,
+	INITIALIZE_ALL,
+	OLD_FULL,
+	NEW_FULL
+};
 
-		/*
-		 *
-		 * Gather/scatter import, double, export check
-		 *
-		 */
+std::unordered_map<TIMER_CATEGORY, double> accumulatedTimes;
+std::unordered_map<TIMER_CATEGORY, std::chrono::steady_clock::time_point> timePoints;
+std::unordered_map<TIMER_CATEGORY, std::string> timeNames = 
+{{OLD_GATHER, "old gather"}, {OLD_SCATTER, "old scatter"}, {NEW_GATHER, "new gather"}, {NEW_SCATTER, "new scatter"},
+	{NEW_GATHER, "new gather"}, {OLD_KERNEL, "old kernel"}, {NEW_KERNEL, "new kernel"}, {INITIALIZE_ALL, "initialize all"},
+	{OLD_FULL, "old full"}, {NEW_FULL, "new full"}};
 
-		/*
-		 * Check nodal vector variables by an example
-		 */
+void tick(TIMER_CATEGORY TIMER);
 
-		// Initialise owned original coordinates to TESTVAL after backup of the previous values
-		tempAccess = queryEpetraDict("owned_original_coordinates")->Values();
-		previousOwnedOrigCoords = queryEpetraDict("owned_current_coordinates")->Values();
-		for(int ownedDof = 0; ownedDof < NUM_OWNED_GLOBAL_ELEMENTS*DIMENSION_TOTAL; ownedDof += DIMENSION_TOTAL){
-			for(int solidDof = 0; solidDof < DIMENSION_SOLIDS; ++ solidDof){
-				previousOwnedOrigCoords[ownedDof + solidDof] = tempAccess[ownedDof + solidDof];// save owned original coordinates into owned current coordinates
-				// Set the value of the owned nodal vectors
-				tempAccess[ownedDof + solidDof] = TESTVAL;	
-			}	
-		}
+void tock(TIMER_CATEGORY TIMER);
 
-		// Import owned original coordinates into the overlap original coordinates vector
-		//queryEpetraDict("overlap_original_coordinates")->Import(*(queryEpetraDict("owned_original_coordinates")), myVecImporter, Epetra_CombineMode Insert);
-		data.scatter("owned_original_coordinates", "overlap_original_coordinates", Data::VARIABLE_NATURE VECTOR, Epetra_CombineMode Insert);
-		
-		// Now compare the imported values to the TESTVAL and then multiply them by FACTOR
-		comparisonFailed = 0;
-		tempAccess(queryEpetraDict("overlap_original_coordinates")->Values());
-		for(int olapDofIndex = 0; olapDofIndex < MY_OVERLAP_SOLIDS_SPAN; olapDofIndex += DIMENSION_SOLIDS){
-			for(int solidDof = 0; solidDof < DIMENSION_SOLIDS; ++ solidDof){
-				comparisonFailed += (TESTVAL == tempAccess[olapDofIndex*DIMENSION_TOTAL/DIMENSION_SOLIDS + solidDof]);
-				tempAccess[olapDofIndex*DIMENSION_TOTAL/DIMENSION_SOLIDS + solidDof] *= FACTOR;
-			}
-		}
-		if(comparisonFailed < MY_OVERLAP_SOLIDS_SPAN){
-			std::cout << "**** ERROR: Import for nodal vector vars failed." << std::endl;
-		}
+void finaliseTimes();
 
-		// Export overlap original coordinates into the owned original coordinates vector
-		queryEpetraDict("overlap_original_coordinates")->Export(*(queryEpetraDict("owned_original_coordinates")), myVecExporter, Epetra_CombineMode Insert);
+bool oldIsValid(PrimaryNS::Data &data);
 
-		// Check that the values of of the owned original coordinates vector equal TWICE_TESTVAL
-		comparisonFailed = 0;
-		tempAccess = queryEpetraDict("owned_original_coordinates")->Values();
-		for(int ownedDof = 0; ownedDof < NUM_OWNED_GLOBAL_ELEMENTS*DIMENSION_TOTAL; ownedDof += DIMENSION_TOTAL){
-			for(int solidDof = 0; solidDof < DIMENSION_SOLIDS; ++ solidDof){
-				comparisonFailed += (tempAccess[ownedDof + solidDof] == TWICE_TESTVAL);	
-			}
-		}
-		if(comparisonFailed < NUM_OWNED_GLOBAL_ELEMENTS){
-			std::cout << "**** ERROR: Export for nodal vector vars failed." << std::endl;
-		}
+bool newIsValid(PrimaryNS::Data &data);
 
-		// Restore original values for original coordinates from where they were saved.
-		tempAccess = queryEpetraDict("owned_original_coordinates")->Values();
-		for(int ownedDof = 0; ownedDof < NUM_OWNED_GLOBAL_ELEMENTS*DIMENSION_TOTAL; ownedDof += DIMENSION_TOTAL){
-			for(int solidDof = 0; solidDof < DIMENSION_SOLIDS; ++ solidDof){
-				tempAccess[ownedDof + solidDof] = previousOwnedOrigCoords[ownedDof + solidDof] = tempAccess[ownedDof + solidDof];
-			}	
-		}
+bool oldIsValid(PrimaryNS::Data &data);
 
-		// Import the owned original coordinates into overlap original coordinates
-		queryEpetraDict("overlap_original_coordinates")->Import(*(queryEpetraDict("owned_original_coordinates")), myVecImporter, Epetra_CombineMode Insert);
+void oldGatherTest(PrimaryNS::Data &data);
 
-		// Compare the overlap original coordinates with overlapVerticesFlat
-		comparisonFailed = 0;
-		tempAccess(queryEpetraDict("overlap_original_coordinates")->Values());
-		for(int olapDofIndex = 0; olapDofIndex < MY_OVERLAP_SOLIDS_SPAN; olapDofIndex += DIMENSION_SOLIDS){
-			for(int solidDof = 0; solidDof < DIMENSION_SOLIDS; ++ solidDof){
-				comparisonFailed += (overlapVerticesFlat[olapDofIndex + solidDof] == tempAccess[olapDofIndex*DIMENSION_TOTAL/DIMENSION_SOLIDS + solidDof]);
-			}
-		}
-		if(comparisonFailed < MY_OVERLAP_SOLIDS_SPAN){
-			std::cout << "**** ERROR: Epetra storage and model values mismatched for nodal vector vars." << std::endl;
-		}
+void newGatherTest(PrimaryNS::Data &data);
 
-		/*
-		 * Check nodal scalar variables by an example
-		 */
+void oldScatterTest(PrimaryNS::Data &data);
 
-		// First set the value of the owned nodal scalars, no need to save them because they will not be plotted later
-		tempAccess = queryEpetraDict("owned_dilatation")->Values();
-		for(int ownedNode = 0; ownedNode < NUM_OWNED_GLOBAL_ELEMENTS; ++ ownedNode){
-			tempAccess[ownedNode] = TESTVAL;	
-		}
+void newScatterTest(PrimaryNS::Data &data);
 
-		// Import owned node damage to overlap node damage
-		queryEpetraDict("overlap_node_damage")->Import(*(queryEpetraDict("owned_node_damage")), myScaImporter, Epetra_CombineMode Insert);
+void oldKernelEvaluateTest(PrimaryNS::Data &data);
 
-		// Check the values of the overlap nodal scalars and see if they match TESTVAL, then multiply them by FACTOR 
-		comparisonFailed = 0;
-		tempAccess = queryEpetraDict("overlap_node_damage")->Values();
-		for(int olapNodeIndex = 0; olapNodeIndex < MY_OVERLAP_SOLIDS_SPAN/DIMENSION_SOLIDS; ++ olapNodeIndex){
-			comparisonFailed += (tempAccess[olapNodeIndex] == TESTVAL);
-			tempAccess[olapNodeIndex] *= FACTOR;
-		}
-		if(comparisonFailed < MY_OVERLAP_SOLIDS_SPAN/DIMENSION_SOLIDS){
-			std::cout << "**** ERROR: Layout of overlap nodal scalar variables is not correct." << std::endl;
-		}
+void newKernelEvalauteTest(PrimaryNS::Data &data);
 
-		// Export the overlap node damage to the owned node damage vector
-		queryEpetraDict("overlap_node_damage")->Export(*(queryEpetraDict("owned_node_damage")), myScaExporter, Epetra_CombineMode Insert);
+void oldFullTest(PrimaryNS::Data &data);
 
-		// Check that the values of the owned node damage vector are equal to TWICE_TESTVAL
-		comparisonFailed = 0;
-		tempAccess = queryEpetraDict("owned_node_damage")->Values();
-		for(int ownedNode = 0; ownedNode < NUM_OWNED_GLOBAL_ELEMENTS; ++ ownedNode){
-			comparisonFailed += (tempAccess[ownedNode] == TWICE_TESTVAL);	
-		}
-		if(comparisonFailed < NUM_OWNED_GLOBAL_ELEMENTS){
-			std::cout << "**** ERROR: Gather/scatter on nodal scalar variables is broken." << std::endl;
-		}
+void newFullTest(PrimaryNS::Data &data);
 
+void reportAverageTimes(const int myID, Epetra_MpiComm &myEpetraComm);
 
-}
-
- 
 int main(int argc,char * argv[]) {
     // Initialize the MPI and Epetra communicators
     MPI::Init ( argc, argv );
     Epetra_MpiComm EpetraComm(MPI_COMM_WORLD );
     const int p = MPI::COMM_WORLD.Get_size();
     const int id = MPI::COMM_WORLD.Get_rank();
+
+		for(int timeName(OLD_GATHER); timeName <= NEW_FULL; ++ timeName){
+			accumulatedTimes[timeName] = 0.0;
+		}
 
     // Get all input parameters
     // Input file name should have been the last argument specified
@@ -139,13 +71,116 @@ int main(int argc,char * argv[]) {
     Teuchos::updateParametersFromXmlFile(inputFileName, mpPointer);
 
     //Create data object(s)
+		tick(INITIALIZE_ALL);
     PrimaryNS::Data myData( masterParams, EpetraComm, p , id);
+		tock(INITIALIZE_ALL);
 
-		//Make sure the maps were created correctly (scalar and block)
-		//Make sure importing and exporting work correctly
-    gatherScatterCheck(myData);
+		bool oldIsValid(integrityCheckOnNew(myData));
+		if(id == 0){
+			if(oldIsValid) std::cout << "Old code passes model evaluation integrity check." << std::endl;
+			else std::cout << "Old code does not pass model evaluation integrity check." << std::endl;
+		}
+
+		bool newIsValid(integrityCheckOneOld(myData));
+		if(id == 0){
+			if(newIsValid) std::cout << "New code passes model evaluation integrity check." << std::endl;
+			else std::cout << "New code does not pass model evaluation integrity check." << std::endl;
+		}
+
+		if(oldIsValid and newIsValid){
+			tick(OLD_GATHER);
+			oldGatherTest(myData);
+			tock(OLD_GATHER);
+
+			tick(NEW_GATHER);
+			newGatherTest(myData);
+			tock(NEW_GATHER);
+
+			tick(OLD_SCATTER);
+			oldScatterTest(myData);
+			tock(OLD_SCATTER);
+
+			tick(NEW_SCATTER);
+			newScatterTest(myData);
+			tock(NEW_SCATTER);
+
+			tick(OLD_KERNEL);
+			oldKernelEvaluateTest(myData);
+			tock(OLD_KERNEL);
+
+			tick(NEW_KERNEL);
+			newKernelEvalauteTest(myData);
+			tock(NEW_KERNEL);
+
+			tick(OLD_FULL);
+			oldFullTest(myData);
+			tock(OLD_FULL);
+
+			tick(NEW_FULL);
+			newFullTest(myData);
+			tock(OLD_FULL);
+
+			finaliseTimes();
+
+			reportAverageTimes(id);
+		}
+		else{
+			std::cout << "Rank: " << id << ", part 2 of the test cannot proceed." << std::endl;
+		}
+
 
     MPI::Finalize();
 
     return 0;
 }
+
+void tick(TIMER_CATEGORY TIMER){
+	timePoints[TIMER] = std::chrono::steady_clock::now();	
+}	
+
+void tock(TIMER_CATEGORY TIMER){
+	accumulatedTimes[TIMER] += static_cast<double>( (std::chrono::steady_clock::now() - timePoints[TIMER]).count()); 
+}
+
+void finaliseTimes(){
+		for(int timeName(OLD_GATHER); timeName <= NEW_FULL; ++ timeName){
+			accumulatedTimes[timeName] *= std::chorno::steady_clock::period::num()/ std::chrono::steady_clock::period::den();  
+		}
+}
+
+bool oldIsValid(PrimaryNS::Data &data);
+
+bool newIsValid(PrimaryNS::Data &data);
+
+bool oldIsValid(PrimaryNS::Data &data);
+
+void oldGatherTest(PrimaryNS::Data &data);
+
+void newGatherTest(PrimaryNS::Data &data);
+
+void oldScatterTest(PrimaryNS::Data &data);
+
+void newScatterTest(PrimaryNS::Data &data);
+
+void oldKernelEvaluateTest(PrimaryNS::Data &data);
+
+void newKernelEvalauteTest(PrimaryNS::Data &data);
+
+void oldFullTest(PrimaryNS::Data &data);
+
+void newFullTest(PrimaryNS::Data &data);
+
+void reportAverageTimes(Epetra_MpiComm &myEpetraComm){
+	double myTime(0.0), globalSumTime(0.0);
+	for(int timeName(OLD_GATHER); timeName <= NEW_FULL; ++ timeName){
+			myTime = accumulatedTimes[timeName];  
+			globalSumTime = 0.0;
+			myEpetraComm.SumAll(&myTime, &globalSumTime, 1);
+			if(myEpetraComm.MyPID == 0) std::cout << "Average " << timeNames[timeName] << " time per iteration, averaged over all processors\n
+				was: " << (globalSumTime/myEpetraComm.NumProcs())/NUM_ITERATIONS << std::endl;
+	}
+
+		
+	
+};
+
