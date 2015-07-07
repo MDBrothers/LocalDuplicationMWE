@@ -39,19 +39,19 @@ int main(int argc,char * argv[]) {
 		// These ten nodes are not connected to the nodes on other processors.
 		// Instead, they are all locally connected, such that each owned neighborhood
 		// contains each of the owned nodes.
-		const long long int NUM_GLOBAL_NODES(p*10);
-		const long long int NUM_OWNED_BONDS(100);
-		const long long int MY_START_GID(id*10);
-		const long long int MY_LIMIT_GID((id+1)*10);
+		const long long int NUM_GLOBAL_NODES(p*3);
+		const long long int NUM_OWNED_BONDS(9);
+		const long long int MY_START_GID(id*3);
+		const long long int MY_LIMIT_GID((id+1)*3);
 
 		std::vector<long long int> myOwnedNodes;
-		myOwnedNodes.reserve(10);
+		myOwnedNodes.reserve(3);
 
 		// These maps help us perform local broadcasting as well as local reduction
 		// to complement the on-network communications that Epetra handles for us.
 		std::multimap<long long int, long long int> cloneToMasterLID;
 		std::vector<std::vector< long long int> > masterToCloneLIDs;
-		masterToCloneLIDs.resize(10);
+		masterToCloneLIDs.resize(3);
 
 		for(long long int ownedGID(MY_START_GID); ownedGID < MY_LIMIT_GID; ++ ownedGID){
 			myOwnedNodes.push_back(ownedGID);
@@ -60,8 +60,8 @@ int main(int argc,char * argv[]) {
 		Teuchos::RCP<Epetra_BlockMap> ownedMap, overlapMapTraditional, overlapWdupBlockMap;
 		Teuchos::RCP<Epetra_Vector> ownedVector, overlapVector, overlapWdupVector;
 		// For this example the ownedMap and overlapMapTraditional are equivalent
-		ownedMap = Teuchos::rcp(new Epetra_BlockMap(NUM_GLOBAL_NODES, 10, myOwnedNodes.data(), element_size, index_base, EpetraComm));
-		overlapMapTraditional = Teuchos::rcp(new Epetra_BlockMap(NUM_GLOBAL_NODES, 10, myOwnedNodes.data(), element_size, index_base, EpetraComm));
+		ownedMap = Teuchos::rcp(new Epetra_BlockMap(NUM_GLOBAL_NODES, 3, myOwnedNodes.data(), element_size, index_base, EpetraComm));
+		overlapMapTraditional = Teuchos::rcp(new Epetra_BlockMap(NUM_GLOBAL_NODES, 3, myOwnedNodes.data(), element_size, index_base, EpetraComm));
 		ownedVector = Teuchos::rcp(new Epetra_Vector(*ownedMap));
 		overlapVector = Teuchos::rcp(new Epetra_Vector(*ownedMap));
 
@@ -72,17 +72,18 @@ int main(int argc,char * argv[]) {
 			std::vector<long long int> duplicateNeighborGIDs;
 			std::vector<long long int> myMasterLIDs;
 			std::vector<long long int> myCloneLIDs;
-			myMasterLIDs.reserve(100);
-			myCloneLIDs.resize(100);
-			duplicateNeighborGIDs.reserve(100);
+			myMasterLIDs.reserve(9);
+			myCloneLIDs.resize(9);
+			duplicateNeighborGIDs.reserve(9);
 
 			// We need multimaps that deal with GIDs during construction, but since after we will work only locally,
 			// they are then no longer needed.
 			std::map<long long int, long long int> GIDtoMasterLID;
 			std::multimap<long long int, long long int> cloneLIDtoGID;
+			std::multimap<long long int, long long int> eachLIDtoGID;
 
 			// Generate the neighborhoods on this processor in terms of their duplicated GIDs
-			for(int neighborhood(0); neighborhood < 10; ++ neighborhood, std::rotate(myOwnedNodes.begin(), myOwnedNodes.begin() + 1, myOwnedNodes.end())){
+			for(int neighborhood(0); neighborhood < 3; ++ neighborhood, std::rotate(myOwnedNodes.begin(), myOwnedNodes.begin() + 1, myOwnedNodes.end())){
 				duplicateNeighborGIDs.insert(duplicateNeighborGIDs.end(), myOwnedNodes.begin(), myOwnedNodes.end());
 			}
 
@@ -103,6 +104,7 @@ int main(int argc,char * argv[]) {
 			// Determine the basic lists of LIDs on this processor
 			for(long long int LID(0); LID<overlapWdupBlockMap->NumMyElements(); ++ LID){
 				myLIDs.push_back(LID);
+				eachLIDtoGID.insert( std::pair<long long int, long long int>(LID, myOwnedNodes[LID]) );
 			}
 			std::sort(myLIDs.begin(), myLIDs.end());
 
@@ -112,8 +114,7 @@ int main(int argc,char * argv[]) {
 
 			// Determine the GIDs associated with the clone LIDs
 			for(auto itval: myCloneLIDs){
-				std::cout << itval << " " << overlapWdupBlockMap->GID(itval) << std::endl;
-				cloneLIDtoGID.insert( std::pair<long long int, long long int>(itval, 100)); 
+				cloneLIDtoGID.insert( std::pair<long long int, long long int>(itval, eachLIDtoGID.find(itval)->second)); 
 			}
 
 			// Populate clone LID to master LID multimap
@@ -139,9 +140,9 @@ int main(int argc,char * argv[]) {
 
 		//overlapWdupVector->Import(*ownedVector, *importer, Epetra_CombineMode::Add);
 		localReduceAll(overlapWdupVector, cloneToMasterLID, element_size);
-		ownedVector->Export(*overlapWdupVector, *exporter, Epetra_CombineMode::Add);
+		ownedVector->Export(*overlapWdupVector, *exporter, Epetra_CombineMode::Insert);
 
-		ownedVector->Print(std::cout);
+		//ownedVector->Print(std::cout);
 		//overlapWdupVector->Print(std::cout);
 
     MPI::Finalize();
@@ -169,6 +170,7 @@ void localReduceAll(Teuchos::RCP<Epetra_Vector> myOverlapWdupVector, std::multim
 				const int cloneLocalIndex( cloneMasterPair.first * DIMENSION );
 			 	const int masterLocalIndex( cloneMasterPair.second * DIMENSION );
 
+				std::cout << masterLocalIndex << std::endl;
 				for(int dof(0); dof < DIMENSION; ++ dof){
 					// The master entry may or may not have the non-reaction force information, but it doesn't matter since
 					// some one clone will have it. This is because a GID leads a neighborhood once as either a clone or a master.
