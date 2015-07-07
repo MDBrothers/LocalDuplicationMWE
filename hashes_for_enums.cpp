@@ -13,6 +13,7 @@ enum VARIABLE_ROLE{
 OWNED,
 OVERLAP
 };
+/*
 
 namespace std {
 	template<class E>class hash {
@@ -22,7 +23,29 @@ namespace std {
 			return std::hash<typename std::underlying_type<E>::type>()(e);
 		}
 	};
+
 }
+*/
+namespace std {
+	//Full specialization of hash for my enums
+	template<> struct hash<VARIABLE_NATURE> {
+	 using bogotype = typename std::enable_if<std::is_enum<VARIABLE_NATURE>::value, VARIABLE_NATURE>::type;
+			  public:
+		    size_t operator()(const VARIABLE_NATURE&e) const {
+			return std::hash<typename std::underlying_type<VARIABLE_NATURE>::type>()(e);
+			  }
+	 };
+
+	template<> struct hash<VARIABLE_ROLE> {
+	 using bogotype = typename std::enable_if<std::is_enum<VARIABLE_ROLE>::value, VARIABLE_ROLE>::type;
+			  public:
+		    size_t operator()(const VARIABLE_ROLE&e) const {
+			return std::hash<typename std::underlying_type<VARIABLE_ROLE>::type>()(e);
+			  }
+	 };
+
+}
+
 
 
 int main(int argc, char **argv){

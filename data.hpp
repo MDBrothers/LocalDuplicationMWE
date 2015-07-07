@@ -47,6 +47,43 @@
 
 namespace PrimaryNS {
 
+	enum VARIABLE_NATURE{
+		NEW_SOLIDS,
+		OLD_SOLIDS,
+		BLANK,
+		ERROR
+	};
+
+	enum VARIABLE_ROLE{
+		OWNED,
+		OVERLAP
+	};
+
+
+	//Full specialization of hash for my enums. We do full specialization to comply with standards by using defined behavior
+	//here to better future proof the code. This code was based on a solution from
+	// B. Garvin
+	// http://stackoverflow.com/questions/9646297/c11-hash-function-for-any-enum-type
+	// Accessed: July 7, 2015
+	namespace std{
+	template<> struct hash<VARIABLE_NATURE> {
+	 using bogotype = typename std::enable_if<std::is_enum<VARIABLE_NATURE>::value, VARIABLE_NATURE>::type;
+			  public:
+		    size_t operator()(const VARIABLE_NATURE&e) const {
+			return std::hash<typename std::underlying_type<VARIABLE_NATURE>::type>()(e);
+			  }
+	 };
+
+	template<> struct hash<VARIABLE_ROLE> {
+	 using bogotype = typename std::enable_if<std::is_enum<VARIABLE_ROLE>::value, VARIABLE_ROLE>::type;
+			  public:
+		    size_t operator()(const VARIABLE_ROLE&e) const {
+			return std::hash<typename std::underlying_type<VARIABLE_ROLE>::type>()(e);
+			  }
+	 };
+	}
+
+
 // The data class stores connectivity information as well as the other distributed structures
 class Data {
 private:
@@ -299,10 +336,6 @@ private:
 	// Non-duplicate overlap maps
 	Teuchos::RCP<Epetra_BlockMap> overlapBlockMapSolids;
 
-	std::vector<int> sourceNodalLIDVector;
-	std::vector<std::vector<int> > sourceToCloneNodalBroadcastVectormap; // 
-	std::multimap<int, int> cloneToSourceLocalNodalMultimap; // Multiple local indices point to the same global index
-
     long int NUM_GLOBAL_NODES;
     long int NUM_GLOBAL_DOFS;
     long int NUM_OWNED_NODES;
@@ -339,30 +372,6 @@ public:
 		};
 
 private:
-		/*
-		 * Mutators using global connectivity variables. TODO put the actual method implementations into the cpp file
-		 */
-		enum VARIABLE_NATURE{
-			NEW_SOLIDS,
-			OLD_SOLIDS,
-			BLANK,
-			ERROR
-		};
-
-		enum VARIABLE_ROLE{
-			OWNED,
-			OVERLAP
-		};
-
-		namespace std {
-	 		template<class E>class hash {
-			 using  = typename std::enable_if<std::is_enum<E>::value, E>::type;
-					  public:
-				    size_t operator()(const E&e) const {
-				    	return std::hash<typename std::underlying_type<E>::type>()(e);
-					  }
-			 };
-		}
 
 		std::unordered_map<VARIABLE_ROLE, VARIABLE_NATURE > varNameToVarArchetypeDict; // keys are variable names
 
@@ -384,21 +393,18 @@ private:
 			// Give us read/write access to the Epetra_Vector through a pointer.
 			double* myOverlapPtr(queryEpetraDictForValues(overlap));
 
-			std::vector<int>::iterator sourceLIDIterator(sourceNodalLIDVector.begin());
-			std::vector<std::vector<int> >::iterator sourceToCloneVectorIterator(sourceToCloneNodalBroadcastVectormap.begin());
-
-			// Loop over each source local index, those indices and values the Epetra Importer recognizes, and duplicate their values into the 
-			// appropriate entries for the local clone indices stored in the sourceToCloneNodalBroadcastVectormap.
-			for(; sourceLIDIterator != sourceNodalLIDVector.end(); ++ sourceLIDIterator, ++ sourceToCloneVectorIterator){
-				const int sourceLID(*sourceLIDIterator * DIMENSION);
-				std::vector<int>::iterator cloneLIDIterator(sourceToCloneVectorIterator->begin());
-				for(; cloneLIDIterator != sourceToCloneVectorIterator->end(); ++cloneLIDIterator){
-					const int cloneLID(*cloneLIDIterator * DIMENSION);
-					for(int dof(0); dof < DIMENSION; ++ dof){
-						myOverlapPtr[cloneLID + dof] = myOverlapPtr[sourceLID + dof];
+			long long int MLID_Ordinal(0);
+			for(auto masterVector: masterToCloneLIDs){
+				for(auto cloneLID : masterVector){
+					const int cloneScaledIndex(cloneLID*DIMENSION);
+					const int masterScaledIndex(myMasterLIDs[MLID_Ordinal]*DIMENSION);
+					for(int dof(0); dof<i DIMENSION; ++ dof){
+						myOverlapPtr[cloneScaledIndex + dof] = myOverlapPtr[masterScaledIndex + dof];
 					}
 				}
+				++ MLID_Ordinal;
 			}
+
 			tock(LOCAL_BROADCAST);
 		};
 
@@ -429,34 +435,31 @@ private:
 
 			// Give us read/write access to the Epetra_Vectors through pointers.
 			//
-			// This vector is for the reactions on the neighbors from computing the force at owned nodes.
-			double* myReactionsOverlapPtr(queryEpetraDictForValues(outputName));
 			// This vector is vector for storing the overlap force itself, not just the reactions.
-			double* myPrimaryOverlapPtr(queryEpetraDictForValues(overlap));
+			double* myOverlapPtr(queryEpetraDictForValues(overlap));
 
+			const int DIMENSION(myElement_Size);
+			double* myOverlapPtr(myOverlapWdupVector->Values());
 
-			// Master are those local indices that send and receive during Epetra communication, clones
-			// are those that we have duplicated locally and Epetra doesn't know how to manage.
-			std::multimap<int, int>::iterator cloneMasterPair(cloneToSourceLocalNodalMultimap.begin());
-			for(; cloneMasterPair != cloneToSourceLocalNodalMultimap.end(); ++cloneMasterPair){
-				const int cloneLocalIndex( cloneMasterPair->first * DIMENSION );
-			 	const int masterLocalIndex( cloneMasterPair->second * DIMENSION );
+			// For every clone LID, add its reaction into the entries for the corresponding master LID
+			// Since only one of a set of equivalent master LID and clone LIDs leads a neighborhood,
+			// we need not worry about multiplication of force evaluations, since:
+			// A) if the force, not reaction is stored in master, all the clones will only have reactions.
+			// -or-
+			// B) if the force, not reaction is stored in a clone, it will be added to the reaction stored in master.
+			//
+			// Therefor A and B produce equivalent results. 
+			//
+			// This code does the job:
+			for(auto cloneMasterPair : cloneToMasterLID){
 
-				// From being neighbors, nodes pick up reactions during force evaluations.
-				// Add the reactions from the clones' participation in different neighborhoods to force value for
-				// the master node.
+				const int cloneLocalIndex( cloneMasterPair.first * DIMENSION );
+			 	const int masterLocalIndex( cloneMasterPair.second * DIMENSION );
+
 				for(int dof(0); dof < DIMENSION; ++ dof){
-			  	myPrimaryOverlapPtr[masterLocalIndex + dof] += myReactionsOverlapPtr[cloneLocalIndex + dof];
-				}
-			}	
-
-			// Add in the reactions of the master local indices from their participation as neighbors in their home neighborhood.
-			// a home neighborhood is the neighborhood were the master local index is a neighbor.
-			std::vector<int>::iterator sourceLIDIterator(sourceNodalLIDVector.begin());
-			for(; sourceLIDIterator != sourceNodalLIDVector.end(); ++ sourceLIDIterator){
-				const int masterLocalIndex( *sourceLIDIterator * DIMENSION);
-				for(int dof(0); dof < DIMENSION; ++ dof){
-			  	myPrimaryOverlapPtr[masterLocalIndex + dof] += myReactionsOverlapPtr[masterLocalIndex + dof];
+					// The master entry may or may not have the non-reaction force information, but it doesn't matter since
+					// some one clone will have it. This is because a GID leads a neighborhood once as either a clone or a master.
+			   	myOverlapPtr[masterLocalIndex + dof] += myOverlapPtr[cloneLocalIndex + dof];
 				}
 			}
 			tock(LOCAL_REDUCE);
@@ -595,8 +598,13 @@ public:
 						std::cout << "**** Error in Data::gather(...), unknown VARIABLE_NATURE specified." << std::endl;
 				}	
 
-				// Before we Export the force value after a force force evaluation for all neighborhoods, we call localReduceAll so that the neighbor reactions are correctly summed into the force vector entries that correspond to the master local indices from the clone local indices.
-				if(one.second == NEW_SOLIDS) localReduceAll(overlap, NATURE);
+				// Before we Export the force value after a force force evaluation for all neighborhoods, we call localReduceAll so that 
+				// the neighbor reactions are correctly summed into the force vector entries that correspond to the master local indices 
+		                // from the clone local indices. In an undesirable behavior in Epetra_Export, the master LIDs determined by the GIDs
+				// are not actually the ones looked at by export, instead some clone LIDs are selected. This behavior was identified
+				// in the map_test. It just means that after reduction, the master values have to be broadcast so the arbitrary clone
+				// nodes that are actually used recieve the proper accumulated values before communication.
+				if(one.second == NEW_SOLIDS){ localReduceAll(overlap, NATURE); localBroadcastAll(overlap, NATURE);}
 				// Export the information from the overlap vector into the owned vector, using the Add combine mode.
 				queryEpetraDict(overlap)->Export(*(queryEpetraDict(owned)), *myExporter, Epetra_CombineMode::Add);
 			}
