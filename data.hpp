@@ -592,7 +592,7 @@ public:
 				// Before we Export the force value after a force force evaluation for all neighborhoods, we call localReduceAll so that the neighbor reactions are correctly summed into the force vector entries that correspond to the master local indices from the clone local indices.
 				if(one.second == NEW_SOLIDS) localReduceAll(overlap, NATURE);
 				// Export the information from the overlap vector into the owned vector, using the Add combine mode.
-				queryEpetraDict(overlap)->Import(*(queryEpetraDict(owned)), *myExporter, Epetra_CombineMode::Add);
+				queryEpetraDict(overlap)->Export(*(queryEpetraDict(owned)), *myExporter, Epetra_CombineMode::Add);
 			}
 
 			if(one.second == OLD_SOLIDS)
