@@ -24,6 +24,8 @@
 #include <tuple>
 
 
+void localBroadcastAll(Teuchos::RCP<Epetra_Vector> myOverlapWdupVector, std::vector<std::vector<long long int> > & myMasterToCloneMultivector, std::vector<long long int> & myMLIDs, const int myElement_Size);
+
 void localReduceAll(Teuchos::RCP<Epetra_Vector> myOverlapWdupVector, std::multimap<long long int, long long int> & myDupMap, const int myElement_Size);
 
 int main(int argc,char * argv[]) {
@@ -32,26 +34,28 @@ int main(int argc,char * argv[]) {
     Epetra_MpiComm EpetraComm(MPI_COMM_WORLD );
     const int p = MPI::COMM_WORLD.Get_size();
     const int id = MPI::COMM_WORLD.Get_rank();
-		const int index_base(0);
-		const int element_size(3);
+    const int index_base(0);
+    const int element_size(3);
 
 		// Every processor owns ten nodes.
 		// These ten nodes are not connected to the nodes on other processors.
 		// Instead, they are all locally connected, such that each owned neighborhood
 		// contains each of the owned nodes.
-		const long long int NUM_GLOBAL_NODES(p*3);
-		const long long int NUM_OWNED_BONDS(9);
-		const long long int MY_START_GID(id*3);
-		const long long int MY_LIMIT_GID((id+1)*3);
+		const long long int NUM_OWNED_NODES_PER_PROC(3);
+		const long long int NUM_GLOBAL_NODES(p*NUM_OWNED_NODES_PER_PROC);
+		const long long int NUM_OWNED_BONDS(NUM_OWNED_NODES_PER_PROC*NUM_OWNED_NODES_PER_PROC);
+		const long long int MY_START_GID(id*NUM_OWNED_NODES_PER_PROC);
+		const long long int MY_LIMIT_GID((id+1)*NUM_OWNED_NODES_PER_PROC);
 
 		std::vector<long long int> myOwnedNodes;
-		myOwnedNodes.reserve(3);
+		myOwnedNodes.reserve(NUM_OWNED_NODES_PER_PROC);
 
 		// These maps help us perform local broadcasting as well as local reduction
 		// to complement the on-network communications that Epetra handles for us.
 		std::multimap<long long int, long long int> cloneToMasterLID;
+		std::vector<long long int> myMasterLIDs;
 		std::vector<std::vector< long long int> > masterToCloneLIDs;
-		masterToCloneLIDs.resize(3);
+		masterToCloneLIDs.resize(NUM_OWNED_NODES_PER_PROC);
 
 		for(long long int ownedGID(MY_START_GID); ownedGID < MY_LIMIT_GID; ++ ownedGID){
 			myOwnedNodes.push_back(ownedGID);
@@ -60,8 +64,8 @@ int main(int argc,char * argv[]) {
 		Teuchos::RCP<Epetra_BlockMap> ownedMap, overlapMapTraditional, overlapWdupBlockMap;
 		Teuchos::RCP<Epetra_Vector> ownedVector, overlapVector, overlapWdupVector;
 		// For this example the ownedMap and overlapMapTraditional are equivalent
-		ownedMap = Teuchos::rcp(new Epetra_BlockMap(NUM_GLOBAL_NODES, 3, myOwnedNodes.data(), element_size, index_base, EpetraComm));
-		overlapMapTraditional = Teuchos::rcp(new Epetra_BlockMap(NUM_GLOBAL_NODES, 3, myOwnedNodes.data(), element_size, index_base, EpetraComm));
+		ownedMap = Teuchos::rcp(new Epetra_BlockMap(NUM_GLOBAL_NODES, NUM_OWNED_NODES_PER_PROC, myOwnedNodes.data(), element_size, index_base, EpetraComm));
+		overlapMapTraditional = Teuchos::rcp(new Epetra_BlockMap(NUM_GLOBAL_NODES, NUM_OWNED_NODES_PER_PROC, myOwnedNodes.data(), element_size, index_base, EpetraComm));
 		ownedVector = Teuchos::rcp(new Epetra_Vector(*ownedMap));
 		overlapVector = Teuchos::rcp(new Epetra_Vector(*ownedMap));
 
@@ -70,11 +74,10 @@ int main(int argc,char * argv[]) {
 		try{
 			// We can avoid cluttering the main scope by putting our utility variables in this structured block.
 			std::vector<long long int> duplicateNeighborGIDs;
-			std::vector<long long int> myMasterLIDs;
 			std::vector<long long int> myCloneLIDs;
-			myMasterLIDs.reserve(9);
-			myCloneLIDs.resize(9);
-			duplicateNeighborGIDs.reserve(9);
+			myMasterLIDs.reserve(NUM_OWNED_BONDS);
+			myCloneLIDs.resize(NUM_OWNED_BONDS);
+			duplicateNeighborGIDs.reserve(NUM_OWNED_BONDS);
 
 			// We need multimaps that deal with GIDs during construction, but since after we will work only locally,
 			// they are then no longer needed.
@@ -83,7 +86,7 @@ int main(int argc,char * argv[]) {
 			std::multimap<long long int, long long int> eachLIDtoGID;
 
 			// Generate the neighborhoods on this processor in terms of their duplicated GIDs
-			for(int neighborhood(0); neighborhood < 3; ++ neighborhood, std::rotate(myOwnedNodes.begin(), myOwnedNodes.begin() + 1, myOwnedNodes.end())){
+			for(int neighborhood(0); neighborhood < NUM_OWNED_NODES_PER_PROC; ++ neighborhood, std::rotate(myOwnedNodes.begin(), myOwnedNodes.begin() + 1, myOwnedNodes.end())){
 				duplicateNeighborGIDs.insert(duplicateNeighborGIDs.end(), myOwnedNodes.begin(), myOwnedNodes.end());
 			}
 
@@ -104,7 +107,7 @@ int main(int argc,char * argv[]) {
 			// Determine the basic lists of LIDs on this processor
 			for(long long int LID(0); LID<overlapWdupBlockMap->NumMyElements(); ++ LID){
 				myLIDs.push_back(LID);
-				eachLIDtoGID.insert( std::pair<long long int, long long int>(LID, myOwnedNodes[LID]) );
+				eachLIDtoGID.insert( std::pair<long long int, long long int>(LID, duplicateNeighborGIDs[LID]) );
 			}
 			std::sort(myLIDs.begin(), myLIDs.end());
 
@@ -133,20 +136,38 @@ int main(int argc,char * argv[]) {
 		overlapWdupVector = Teuchos::rcp(new Epetra_Vector(*overlapWdupBlockMap));
 
 		ownedVector->PutScalar(0.0);
-		overlapWdupVector->PutScalar(1.0);
+		overlapWdupVector->PutScalar(2.0);
 
 		Teuchos::RCP<Epetra_Export> exporter = Teuchos::rcp(new Epetra_Export(*overlapWdupBlockMap, *ownedMap));
 		Teuchos::RCP<Epetra_Import> importer = Teuchos::rcp(new Epetra_Import(*overlapWdupBlockMap, *ownedMap));
 
 		//overlapWdupVector->Import(*ownedVector, *importer, Epetra_CombineMode::Add);
 		localReduceAll(overlapWdupVector, cloneToMasterLID, element_size);
+		localBroadcastAll(overlapWdupVector, masterToCloneLIDs, myMasterLIDs, element_size);
 		ownedVector->Export(*overlapWdupVector, *exporter, Epetra_CombineMode::Insert);
 
-		//ownedVector->Print(std::cout);
+		ownedVector->Print(std::cout);
 		//overlapWdupVector->Print(std::cout);
 
     MPI::Finalize();
 		return 0;
+}
+
+void localBroadcastAll(Teuchos::RCP<Epetra_Vector> myOverlapWdupVector, std::vector<std::vector<long long int> > & myMasterToCloneMultivector, std::vector<long long int> & myMLIDs, const int myElement_Size){
+	const int DIMENSION(myElement_Size);
+	double* myOverlapPtr(myOverlapWdupVector->Values());
+
+	long long int MLID_Ordinal(0);
+	for(auto masterVector: myMasterToCloneMultivector){
+		for(auto cloneLID : masterVector){
+			const int cloneScaledIndex(cloneLID*myElement_Size);
+			const int masterScaledIndex(myMLIDs[MLID_Ordinal]*myElement_Size);
+			for(int dof(0); dof<myElement_Size; ++ dof){
+				myOverlapPtr[cloneScaledIndex + dof] = myOverlapPtr[masterScaledIndex + dof];
+			}
+		}	
+		++ MLID_Ordinal;
+	}	
 }
 
 void localReduceAll(Teuchos::RCP<Epetra_Vector> myOverlapWdupVector, std::multimap<long long int, long long int> & myDupMap, 
@@ -170,7 +191,6 @@ void localReduceAll(Teuchos::RCP<Epetra_Vector> myOverlapWdupVector, std::multim
 				const int cloneLocalIndex( cloneMasterPair.first * DIMENSION );
 			 	const int masterLocalIndex( cloneMasterPair.second * DIMENSION );
 
-				std::cout << masterLocalIndex << std::endl;
 				for(int dof(0); dof < DIMENSION; ++ dof){
 					// The master entry may or may not have the non-reaction force information, but it doesn't matter since
 					// some one clone will have it. This is because a GID leads a neighborhood once as either a clone or a master.

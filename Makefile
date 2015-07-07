@@ -1,5 +1,5 @@
 CXX_FLAGS = -std=c++11 -g
-THIRD_PARTY = -I/usr/local/trilinos/include -I/usr/local/Trilinos/include -L/usr/local/trilinos/lib -L/usr/local/Trilinos/lib -lflann -lmpi -lhdf5 -lepetra -lepetraext -lteuchoscore -lteuchoscomm -lteuchosparameterlist -lnox -lnoxepetra -lloca -llocaepetra -I/usr/local/boost/include
+THIRD_PARTY = -I/usr/local/hdf5/include -I/usr/local/trilinos/include -I/usr/local/Trilinos/include -L/usr/local/hdf5/lib -L/usr/local/trilinos/lib -L/usr/local/Trilinos/lib -lflann -lmpi -lhdf5 -lepetra -lepetraext -lteuchoscore -lteuchoscomm -lteuchosparameterlist -lnox -lnoxepetra -lloca -llocaepetra -I/usr/local/boost/include
 
 compile_tests: 
 	data_test
