@@ -7,6 +7,9 @@ compile_tests:
 map_test: just_the_map.cpp
 	mpicxx $(CXX_FLAGS) -o map_test just_the_map.cpp $(THIRD_PARTY)
 
+hash_test: hashes_for_enums.cpp
+	mpicxx $(CXX_FLAGS) -o hash_test hashes_for_enums.cpp $(THIRD_PARTY)
+
 data_test: libdata.so data_test.cpp data.cpp libplot3d.so
 	mpicxx $(CXX_FLAGS) -o data_test data_test.cpp -L./ -ldata -lplot3d $(THIRD_PARTY)
 

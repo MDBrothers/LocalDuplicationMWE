@@ -252,6 +252,12 @@ private:
     std::vector<int> ownedNeighborhoodLengths;
     std::vector<std::vector<int> > ownedNeighborhoods;
 
+    // These maps help us perform local broadcasting as well as local reduction
+    // to complement the on-network communications that Epetra handles for us.
+    std::multimap<long long int, long long int> cloneToMasterLID;
+    std::vector<long long int> myMasterLIDs;
+    std::vector<std::vector< long long int> > masterToCloneLIDs;
+
     /*
      * For plotting
      */
@@ -279,23 +285,23 @@ private:
     Teuchos::RCP<Epetra_FECrsGraph> myFECrsGraph;
 
 		// We will use the separated strategy for both Picard Coupling and otherwise with regards to solids and multiphysics variables.
- 		Teuchos::RCP<Epetra_Export> myVecExporterSolidsWdup; // Solids and multiphysics variables can have different dimension
+    Teuchos::RCP<Epetra_Export> myVecExporterSolidsWdup; // Solids and multiphysics variables can have different dimension
     Teuchos::RCP<Epetra_Import> myVecImporterSolidsWdup;
 
-		// Non-duplicate importers/exporters
-		Teuchos::RCP<Epetra_Export> myVecExporterSolids;
-		Teuchos::RCP<Epetra_Import> myVecImporterSolids;
+	// Non-duplicate importers/exporters
+	Teuchos::RCP<Epetra_Export> myVecExporterSolids;
+	Teuchos::RCP<Epetra_Import> myVecImporterSolids;
 
-		// Node maps
+	// Node maps
     Teuchos::RCP<Epetra_BlockMap> ownedBlockMapSolids;
 
-    Teuchos::RCP<Epetra_BlockMap> overlapBlockMapSolidsWsup;
-		// Non-duplicate overlap maps
-		Teuchos::RCP<Epetra_BlockMap> overlapBlockMapSolids;
+    Teuchos::RCP<Epetra_BlockMap> overlapBlockMapSolidsWdup;
+	// Non-duplicate overlap maps
+	Teuchos::RCP<Epetra_BlockMap> overlapBlockMapSolids;
 
-		std::vector<int> sourceNodalLIDVector;
-		std::vector<std::vector<int> > sourceToCloneNodalBroadcastVectormap; // 
-		std::multimap<int, int> cloneToSourceLocalNodalMultimap; // Multiple local indices point to the same global index
+	std::vector<int> sourceNodalLIDVector;
+	std::vector<std::vector<int> > sourceToCloneNodalBroadcastVectormap; // 
+	std::multimap<int, int> cloneToSourceLocalNodalMultimap; // Multiple local indices point to the same global index
 
     long int NUM_GLOBAL_NODES;
     long int NUM_GLOBAL_DOFS;

@@ -309,7 +309,7 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
     NUM_GLOBAL_NODES = verticesFlat.size()/DIMENSION_SOLIDS;
     NUM_OWNED_NODES = myGlobalOwnedIds.size();
     NUM_OWNED_BONDS = std::accumulate(ownedNeighborhoodLengths.begin(), ownedNeighborhoodLengths.end(), 0);
-	epetraComm->SumAll(&NUM_OWNED_BONDS, &NUM_GLOBAL_BONDS, 1);
+    epetraComm->SumAll(&NUM_OWNED_BONDS, &NUM_GLOBAL_BONDS, 1);
     const int index_base = 0;
 
     // Form owned maps
@@ -320,23 +320,79 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 
     // Every owned node is connected to itself as well as its neighbors, so each of these connections gets one entry in the crs graph.
     std::vector<int>::iterator ownedGID = myGlobalOwnedIds.begin();
-		std::vector<int> duplicateNeighborGIDs;
-		neighborGIDs.reserve(NUM_OWNED_BONDS);
+    std::vector<long long int> duplicateNeighborGIDs;
+    neighborGIDs.reserve(NUM_OWNED_BONDS);
     for(std::vector<std::vector<int> >::iterator hood = ownedNeighborhoods.begin(); hood != ownedNeighborhoods.end(); ++hood, ++ownedGID) {
         myFECrsGraph->InsertGlobalIndices(1, &(*ownedGID), hood->size(), hood->data());
-				// For every owned neighborhood on this processor, copy all of the GIDs involved into duplicate
-				// neighbor ids.
-				duplicateNeighborGIDs.insert(neighborGIDs.end(),hood->begin(), hood->end());
+	// For every owned neighborhood on this processor, copy all of the GIDs involved into duplicate
+	// neighbor ids.
+	duplicateNeighborGIDs.insert(neighborGIDs.end(),hood->begin(), hood->end());
     }
     myFECrsGraph->GlobalAssemble(true);
     myFECrsGraph->FillComplete();
 
-		try{
-			overlapWdupBlockMap = Teuchos::rcp(new Epetra_BlockMap(NUM_GLOBAL_NODES, NUM_OWNED_BONDS, duplicateNeighborGIDs.data(), element_size, index_base, EpetraComm));
+	/*
+	 *
+	 * Create the additional maps needed to handle duplication.
+	 *
+	 */
+	// We want to be careful to catch exceptions that may arise since we are using the
+	// Epetra_BlocMap in a way it was not necessarily intended to be.
+	try{
+		// We can avoid cluttering the main scope by putting our utility variables in this structured block.
+		std::vector<long long int> myCloneLIDs;
+		myMasterLIDs.reserve(NUM_OWNED_BONDS);
+		myCloneLIDs.resize(NUM_OWNED_BONDS);
+
+		// We need multimaps that deal with GIDs during construction, but since after we will work only locally,
+		// they are then no longer needed.
+		std::map<long long int, long long int> GIDtoMasterLID;
+		std::multimap<long long int, long long int> cloneLIDtoGID;
+		std::multimap<long long int, long long int> eachLIDtoGID;
+
+		// We leave the argument for total number of global elements at -1 so Epetra can imagine what works for it.
+		// This is needed because Epetra_BlockMap is not designed for duplication.
+		overlapBlockMapSolidsWdup = Teuchos::rcp(new Epetra_BlockMap(-1, NUM_OWNED_BONDS, duplicateNeighborGIDs.data(), element_size, index_base, EpetraComm));
+
+		// For the owned GIDs, find the corresponding single 'master' LID
+		// Keep track of which are the master LIDs
+		for(auto itval : myOwnedNodes){
+			GIDtoMasterLID[itval] = overlapBlockMapSolids->LID(itval);
+			myMasterLIDs.push_back(overlapBlockMapSolids->LID(itval)); // Only one master LID per GID in the map.
 		}
-		catch(int Error){
-			if (Error==-4) {std::cout << "****Error, invalid NumGlobalElements. " << std::endl;}
+		std::sort(myMasterLIDs.begin(), myMasterLIDs.end());
+
+		std::vector<long long int> myLIDs;
+		myLIDs.reserve(overlapBlockMapSolids->NumMyElements());
+		// Determine the basic lists of LIDs on this processor
+		for(long long int LID(0); LID<overlapBlockMapSolids->NumMyElements(); ++ LID){
+			myLIDs.push_back(LID);
+			eachLIDtoGID.insert( std::pair<long long int, long long int>(LID, duplicateNeighborGIDs[LID]) );
 		}
+		std::sort(myLIDs.begin(), myLIDs.end());
+
+		// Identify which of all of the LIDs are clones, that is, not master.
+		std::vector<long long int>::iterator difit = std::set_difference(myLIDs.begin(), myLIDs.end(), myMasterLIDs.begin(), myMasterLIDs.end(), myCloneLIDs.begin());
+		myCloneLIDs.resize(difit - myCloneLIDs.begin());
+
+		// Determine the GIDs associated with the clone LIDs
+		for(auto itval: myCloneLIDs){
+			cloneLIDtoGID.insert( std::pair<long long int, long long int>(itval, eachLIDtoGID.find(itval)->second)); 
+		}
+
+		// Populate clone LID to master LID multimap
+		// as well as master LID to clone LID multivector
+		for(auto itval: cloneLIDtoGID){
+			cloneToMasterLID.insert( std::pair<long long int, long long int>(itval.first, GIDtoMasterLID[itval.second] ));
+			masterToCloneLIDs[GIDtoMasterLID[itval.second]].push_back(itval.first);
+		}
+
+	}
+	catch(int Error){
+		if (Error==-4) {std::cout << "****Error, invalid NumGlobalElements. " << std::endl; MPI::Finalize(); return 1;}
+		else {std::cout << "****Error: " << Error << ", unhandled error. " << std::endl; MPI::Finalize(); return 1;}
+	}
+
 
     /*
      *
@@ -346,15 +402,9 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
     // constructor follows the pattern: Epetra_Export(overlap blockmap, owned blockmap);
     // That is: source to-> target
     myVecExporterSolids = Teuchos::rcp(new Epetra_Export(myFECrsGraph->ColMap(), *ownedBlockMapSolids));
-    myVecImporterSolids = Teuchos::rcp(new Epetra_Import(*ownedBlockMapSolids, myFECrsGraph->ColMap()));
-		myVecExporterSolidsWdup = Teuchos::rcp(new Epetra_Export(*overlapWdupBlockMap(), *ownedBlockMapSolids));
-    myVecImporterSolidsWdup = Teuchos::rcp(new Epetra_Import(*ownedBlockMapSolids, *overlapWdupBlockMap));
-
-		/*
-		 *
-		 * Create the additional maps needed to handle duplication.
-		 *
-		 */
+    myVecImporterSolids = Teuchos::rcp(new Epetra_Import(myFECrsGraph->ColMap(), *ownedBlockMapSolids));
+    myVecExporterSolidsWdup = Teuchos::rcp(new Epetra_Export(*overlapBlockMapSolids(), *ownedBlockMapSolids));
+    myVecImporterSolidsWdup = Teuchos::rcp(new Epetra_Import(*overlapBlockMapSolids(), *ownedBlockMapSolids));
 
     /*
      *
@@ -369,17 +419,18 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
      * Allocate the actual simulation data that will be managed by the Trilinos objects
      *
      */
-		// How many of each type of vector do we need?
+	// How many of each type of vector do we need?
     NUM_OWNED_SOLIDS_VECS = OWNED_SOLIDS_VAR_NAMES.size();
     NUM_OVERLAP_SOLIDS_VECS = OVERLAP_SOLIDS_VAR_NAMES.size();
     NUM_OVERLAP_SOLIDS_VECS_WDUP = OVERLAP_SOLIDS_VAR_WDUP_NAMES.size();0
 
 
-		// Create epetra vectors
+	// Create epetra vectors
     ownedSolidsMultiVector= Teuchos::rcp(new Epetra_MultiVector(*ownedBlockMapSolids, NUM_OWNED_SOLIDS_VECS ));
+    // Another owned multivector to avoid interferrence between the things being compared
     ownedSolidsMultiVectorWdup= Teuchos::rcp(new Epetra_MultiVector(*ownedBlockMapSolids, NUM_OWNED_SOLIDS_VECS ));
     overlapSolidsMultiVector= Teuchos::rcp(new Epetra_MultiVector(myFECrsGraph->ColMap(), NUM_OVERLAP_SOLIDS_VECS  ));
-    overlapSolidsMultiVectorWdup= Teuchos::rcp(new Epetra_MultiVector(*overlapWdupBlockMap, NUM_OVERLAP_SOLIDS_VECS_WDUP  ));
+    overlapSolidsMultiVectorWdup= Teuchos::rcp(new Epetra_MultiVector(*overlapBlockMapSolids, NUM_OVERLAP_SOLIDS_VECS_WDUP  ));
 
     /*
      *
@@ -388,25 +439,25 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
      */
     for(std::vector<std::string>::iterator it = OWNED_SOLIDS_VAR_NAMES.begin(); it != OWNED_SOLIDS_VAR_NAMES.end(); ++it) {
         ownedSolidsVectorIndexDict["owned_"+ *it] = std::distance(OWNED_SOLIDS_VAR_NAMES.begin(), it);
-				varNameToVarArchetypeDict["owned_"+*it] = std::pair<std::string, VARIABLE_NATURE>("owned", OLD_SOLIDS);
+	varNameToVarArchetypeDict["owned_"+*it] = std::pair<std::string, VARIABLE_NATURE>("owned", OLD_SOLIDS);
     }
-	 	for(std::vector<std::string>::iterator it = OWNED_SOLIDS_VAR_WDUP_NAMES.begin(); it != OWNED_SOLIDS_VAR_WDUP_NAMES.end(); ++it) {
+    for(std::vector<std::string>::iterator it = OWNED_SOLIDS_VAR_WDUP_NAMES.begin(); it != OWNED_SOLIDS_VAR_WDUP_NAMES.end(); ++it) {
         ownedSolidsVectorWdupIndexDict["owned_"+ *it] = std::distance(OWNED_SOLIDS_VAR_NAMES.begin(), it);
-				varNameToVarArchetypeDict["owned_"+*it] = std::pair<std::string, VARIABLE_NATURE>("owned", NEW_SOLIDS);
+	varNameToVarArchetypeDict["owned_"+*it] = std::pair<std::string, VARIABLE_NATURE>("owned", NEW_SOLIDS);
     }
     for(std::vector<std::string>::iterator it = OVERLAP_SOLIDS_VAR_NAMES.begin(); it != OVERLAP_SOLIDS_VAR_NAMES.end(); ++it) {
         overlapSolidsVectorIndexDict["overlap_"+ *it] = std::distance(OVERLAP_SOLIDS_VAR_NAMES.begin(), it);
-				varNameToVarArchetypeDict["overlap_"+*it] = std::pair<std::string, VARIABLE_NATURE>("overlap", OLD_SOLIDS);
+	varNameToVarArchetypeDict["overlap_"+*it] = std::pair<std::string, VARIABLE_NATURE>("overlap", OLD_SOLIDS);
     }
     for(std::vector<std::string>::iterator it = OVERLAP_SOLIDS_VAR_WDUP_NAMES.begin(); it != OVERLAP_SOLIDS_VAR_WDUP_NAMES.end(); ++it) {
         overlapSolidsVectorWdupIndexDict["overlap_"+ *it] = std::distance(OVERLAP_SOLIDS_VAR_NAMES.begin(), it);
-				varNameToVarArchetypeDict["overlap_"+*it] = std::pair<std::string, VARIABLE_NATURE>("overlap", NEW_SOLIDS);
+	varNameToVarArchetypeDict["overlap_"+*it] = std::pair<std::string, VARIABLE_NATURE>("overlap", NEW_SOLIDS);
     }
 
 
     /*
      *
-		 * Initialize the global variable map for stuff like timestep or num nonlinear iterations 
+     * Initialize the global variable map for stuff like timestep or num nonlinear iterations 
      *
      */
     for(std::vector<std::string>::iterator it = GLOBAL_VAR_NAMES.begin(); it != GLOBAL_VAR_NAMES.end(); ++it) {
@@ -420,6 +471,8 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
      */
     double *ownedOrigCoords(queryEpetraValuesDict("owned_original_coordinates"));
     double *ownedOrigCoordsWdup(queryEpetraValuesDict("owned_original_coordinates_wdup"));
+    double *ownedCurrCoords(queryEpetraValuesDict("owned_current_coordinates"));
+    double *ownedCurrCoordsWdup(queryEpetraValuesDict("owned_current_coordinates_wdup"));
     int i;
     for(std::vector<double>::iterator vertex = myOwnedChunkBegin; vertex != myOwnedChunkEnd; std::advance(vertex, DIMENSION_SOLIDS)) {
         i = std::distance(myOwnedChunkBegin, vertex)/DIMENSION_SOLIDS;
@@ -428,12 +481,29 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
         ownedOrigCoords[i*DIMENSION_TOTAL + 0] = *(vertex + 0);
         ownedOrigCoords[i*DIMENSION_TOTAL + 1] = *(vertex + 1);
         ownedOrigCoords[i*DIMENSION_TOTAL + 2] = *(vertex + 2);
+	ownedOrigCoordsWdup[i*DIMENSION_TOTAL + 0] = *(vertex + 0);
+        ownedOrigCoordsWdup[i*DIMENSION_TOTAL + 1] = *(vertex + 1);
+        ownedOrigCoordsWdup[i*DIMENSION_TOTAL + 2] = *(vertex + 2);
+	// For the current coordinates, scale the positions by 1.5 times, the origin will remain unchanged
+	ownedCurrCoordsWdup[i*DIMENSION_TOTAL + 0] = *(vertex + 0)*1.5;
+        ownedCurrCoordsWdup[i*DIMENSION_TOTAL + 1] = *(vertex + 1)*1.5;
+        ownedCurrCoordsWdup[i*DIMENSION_TOTAL + 2] = *(vertex + 2)*1.5;
+	ownedCurrCoords[i*DIMENSION_TOTAL + 0] = *(vertex + 0)*1.5;
+        ownedCurrCoords[i*DIMENSION_TOTAL + 1] = *(vertex + 1)*1.5;
+        ownedCurrCoords[i*DIMENSION_TOTAL + 2] = *(vertex + 2)*1.5;
+
         overlapVerticesFlat[std::distance(myOverlapChunkBegin, myOwnedChunkBegin) + std::distance(myOwnedChunkBegin, vertex) + 0] = ownedOrigCoords[i*DIMENSION_TOTAL + 0];
         overlapVerticesFlat[std::distance(myOverlapChunkBegin, myOwnedChunkBegin) + std::distance(myOwnedChunkBegin, vertex) + 1] = ownedOrigCoords[i*DIMENSION_TOTAL + 1];
         overlapVerticesFlat[std::distance(myOverlapChunkBegin, myOwnedChunkBegin) + std::distance(myOwnedChunkBegin, vertex) + 2] = ownedOrigCoords[i*DIMENSION_TOTAL + 2];
-		}
-		
-		tock(INITIALISATION);
+	}
+	tock(INITIALISATION);
+
+	/*
+	scatter("owned_original_coordinates", "overlap_original_coordinates");
+	scatter("owned_original_coordinates_wdup", "overlap_original_coordinates_wdup");
+	scatter("owned_original_coordinates", "overlap_original_coordinates");
+	scatter("owned_original_coordinates_wdup", "overlap_original_coordinates_wdup");
+*/
 }
 
 

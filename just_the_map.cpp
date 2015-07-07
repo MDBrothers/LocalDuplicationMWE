@@ -41,7 +41,7 @@ int main(int argc,char * argv[]) {
 		// These ten nodes are not connected to the nodes on other processors.
 		// Instead, they are all locally connected, such that each owned neighborhood
 		// contains each of the owned nodes.
-		const long long int NUM_OWNED_NODES_PER_PROC(3);
+		const long long int NUM_OWNED_NODES_PER_PROC(1000);
 		const long long int NUM_GLOBAL_NODES(p*NUM_OWNED_NODES_PER_PROC);
 		const long long int NUM_OWNED_BONDS(NUM_OWNED_NODES_PER_PROC*NUM_OWNED_NODES_PER_PROC);
 		const long long int MY_START_GID(id*NUM_OWNED_NODES_PER_PROC);
@@ -136,15 +136,18 @@ int main(int argc,char * argv[]) {
 		overlapWdupVector = Teuchos::rcp(new Epetra_Vector(*overlapWdupBlockMap));
 
 		ownedVector->PutScalar(0.0);
-		overlapWdupVector->PutScalar(2.0);
+		overlapWdupVector->PutScalar(1.0);
 
 		Teuchos::RCP<Epetra_Export> exporter = Teuchos::rcp(new Epetra_Export(*overlapWdupBlockMap, *ownedMap));
 		Teuchos::RCP<Epetra_Import> importer = Teuchos::rcp(new Epetra_Import(*overlapWdupBlockMap, *ownedMap));
 
+		int *exportLIDs = exporter->ExportLIDs();
+		//exporter->Print(std::cout);
+
 		//overlapWdupVector->Import(*ownedVector, *importer, Epetra_CombineMode::Add);
 		localReduceAll(overlapWdupVector, cloneToMasterLID, element_size);
 		localBroadcastAll(overlapWdupVector, masterToCloneLIDs, myMasterLIDs, element_size);
-		ownedVector->Export(*overlapWdupVector, *exporter, Epetra_CombineMode::Insert);
+		ownedVector->Export(*overlapWdupVector, *exporter, Epetra_CombineMode::Add);
 
 		ownedVector->Print(std::cout);
 		//overlapWdupVector->Print(std::cout);
@@ -194,7 +197,7 @@ void localReduceAll(Teuchos::RCP<Epetra_Vector> myOverlapWdupVector, std::multim
 				for(int dof(0); dof < DIMENSION; ++ dof){
 					// The master entry may or may not have the non-reaction force information, but it doesn't matter since
 					// some one clone will have it. This is because a GID leads a neighborhood once as either a clone or a master.
-			   myOverlapPtr[masterLocalIndex + dof] += myOverlapPtr[cloneLocalIndex + dof];
+			   	myOverlapPtr[masterLocalIndex + dof] += myOverlapPtr[cloneLocalIndex + dof];
 				}
 			}	
 }
