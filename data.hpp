@@ -712,11 +712,7 @@ public:
 	std::map<std::string, int>::iterator myIndexMapIterator;
 	VARIABLE_NATURE natureOne(varNameToVarNatureDict[varName]);
 	VARIABLE_ROLE roleOne(varNameToVarRoleDict[varName]);
-	std::cout << "Var nature is: " << natureOne << std::endl;
-	std::cout << "Var role is: " << roleOne << std::endl;
-	std::cout << "Var name is: " << varName << std::endl;
-	std::cout << OLD_SOLIDS << std::endl;
-
+	
 	int index(-99);
 
 	try{

@@ -115,7 +115,7 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
      */
     // Get the model geometry parameters from the parameter list, adapting to 1 to N spatial dimensions and 0 to N extended dimensions
     Teuchos::RCP<Teuchos::ParameterList> geometryParams = Teuchos::rcpFromRef( masterParams->sublist("Geometry", true));
-    std::vector<std::string> SPACESHAPE_STRING_VEC = split(geometryParams->get<std::string>("DIMENSIONS_SPATIAL_AND_PLACEHOLDER", "100"), ',');
+    std::vector<std::string> SPACESHAPE_STRING_VEC = split(geometryParams->get<std::string>("DIMENSIONS_SPATIAL_AND_PLACEHOLDER", "40"), ',');
     std::vector<int> SPACESHAPE;
     SPACESHAPE.reserve(SPACESHAPE_STRING_VEC.size());
 
@@ -130,7 +130,7 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 
 		// How dense is our uniform discretization?
     DOTPITCH = geometryParams->get<double>("DOTPITCH", 1.0); // The distance between points on the regular grid, those points differing by a single coordinate value
-    HORIZON = geometryParams->get<double>("HORIZON", 2.1); // The radius used for neighborhood building and model evaluation
+    HORIZON = geometryParams->get<double>("HORIZON", 3.1); // The radius used for neighborhood building and model evaluation
 
 		// Given the density of our discretization and the measurements of the rectangular prismatic body, how many nodes
 		// do we count along each of the x, y and z axes?
@@ -473,11 +473,6 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 	varNameToVarRoleDict["overlap_"+*it] = OVERLAP;
     }
 
-    for(auto it : varNameToVarNatureDict){
-	std::cout << it.first << " nature: " << it.second << std::endl;	
-    } 
-
-
     /*
      *
      * Initialize the global variable map for stuff like timestep or num nonlinear iterations 
@@ -494,44 +489,52 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
      *
      */
 
+
     double *ownedOrigCoords(queryEpetraDictForValues("owned_orig_coords"));
     double *ownedCurrCoords(queryEpetraDictForValues("owned_curr_coords"));
     double *ownedOrigCoordsWdup(queryEpetraDictForValues("owned_orig_coords_wdup"));
     double *ownedCurrCoordsWdup(queryEpetraDictForValues("owned_curr_coords_wdup"));
  //
     int i;
-    for(std::vector<double>::iterator vertex = myOwnedChunkBegin; vertex != myOwnedChunkEnd; std::advance(vertex, DIMENSION_SOLIDS)) {
-        i = std::distance(myOwnedChunkBegin, vertex)/DIMENSION_SOLIDS;
+
+    for(std::vector<double>::iterator vertex = myOwnedChunkBegin; vertex != myOwnedChunkEnd; std::advance(vertex, 1)) {
         // Epetra vectors used local owned degrees of freedom with the [] operator.
         // For multi-insert methods, indices suddenly instead refer to local block number
-        ownedOrigCoords[i*DIMENSION_SOLIDS + 0] = *(vertex + 0);
-        ownedOrigCoords[i*DIMENSION_SOLIDS + 1] = *(vertex + 1);
-        ownedOrigCoords[i*DIMENSION_SOLIDS + 2] = *(vertex + 2);
-	ownedOrigCoordsWdup[i*DIMENSION_SOLIDS + 0] = *(vertex + 0);
-        ownedOrigCoordsWdup[i*DIMENSION_SOLIDS + 1] = *(vertex + 1);
-        ownedOrigCoordsWdup[i*DIMENSION_SOLIDS + 2] = *(vertex + 2);
-	// For the curr coords, scale the positions by 1.5 times, the origin will remain unchanged
-	ownedCurrCoordsWdup[i*DIMENSION_SOLIDS + 0] = *(vertex + 0)*1.5;
-        ownedCurrCoordsWdup[i*DIMENSION_SOLIDS + 1] = *(vertex + 1)*1.5;
-        ownedCurrCoordsWdup[i*DIMENSION_SOLIDS + 2] = *(vertex + 2)*1.5;
-	ownedCurrCoords[i*DIMENSION_SOLIDS + 0] = *(vertex + 0)*1.5;
-        ownedCurrCoords[i*DIMENSION_SOLIDS + 1] = *(vertex + 1)*1.5;
-        ownedCurrCoords[i*DIMENSION_SOLIDS + 2] = *(vertex + 2)*1.5;
-
-        overlapVerticesFlat[std::distance(myOverlapChunkBegin, myOwnedChunkBegin) + std::distance(myOwnedChunkBegin, vertex) + 0] = ownedOrigCoords[i*DIMENSION_SOLIDS + 0];
-        overlapVerticesFlat[std::distance(myOverlapChunkBegin, myOwnedChunkBegin) + std::distance(myOwnedChunkBegin, vertex) + 1] = ownedOrigCoords[i*DIMENSION_SOLIDS + 1];
-        overlapVerticesFlat[std::distance(myOverlapChunkBegin, myOwnedChunkBegin) + std::distance(myOwnedChunkBegin, vertex) + 2] = ownedOrigCoords[i*DIMENSION_SOLIDS + 2];
+		ownedOrigCoords[std::distance(myOwnedChunkBegin, vertex)] = *(vertex);
+		ownedOrigCoordsWdup[std::distance(myOwnedChunkBegin, vertex)] = *(vertex);
+		// For the curr coords, scale the positions by 1.5 times, the origin will remain unchanged
+		ownedCurrCoords[std::distance(myOwnedChunkBegin, vertex)] = *(vertex)*1.5;
+		ownedCurrCoordsWdup[std::distance(myOwnedChunkBegin, vertex)] = *(vertex)*1.5;
 	}
 
 	tock(INITIALISATION);
 
+	scatter("owned_orig_coords", "overlap_orig_coords");
+	scatter("owned_orig_coords_wdup", "overlap_orig_coords_wdup");
+	scatter("owned_curr_coords", "overlap_curr_coords");
+	scatter("owned_curr_coords_wdup", "overlap_curr_coords_wdup");
+
+	std::cout << "\nowned_orig_coords: " << std::endl;
+	queryEpetraDict("owned_orig_coords")->Print(std::cout);
+
+	std::cout << "\nowned_curr_coords: " << std::endl;
+	queryEpetraDict("owned_curr_coords")->Print(std::cout);
+
+	std::cout << "\noverlap_orig_coords: " << std::endl;
+	queryEpetraDict("overlap_orig_coords")->Print(std::cout);
+
+	std::cout << "\noverlap_curr_coords: " << std::endl;
+	queryEpetraDict("overlap_curr_coords")->Print(std::cout);
+
+	std::cout << "\noverlap_orig_coords_wdup: " << std::endl;
+	queryEpetraDict("overlap_orig_coords_wdup")->Print(std::cout);
+
+	std::cout << "\noverlap_curr_coords_wdup: " << std::endl;
+	queryEpetraDict("overlap_curr_coords_wdup")->Print(std::cout);
+
+
 	
-	/*
-	scatter("owned_orig_coords", "overlap_orig_coords");
-	scatter("owned_orig_coords_wdup", "overlap_orig_coords_wdup");
-	scatter("owned_orig_coords", "overlap_orig_coords");
-	scatter("owned_orig_coords_wdup", "overlap_orig_coords_wdup");
-*/
+
 }
 
 
