@@ -593,6 +593,9 @@ public:
 				 	case NEW_SOLIDS:
 						myExporter = myVecExporterSolidsWdup;
 						break;
+					case OLD_SOLIDS:
+						myExporter = myVecExporterSolids;
+						break;
 					default:
 						std::cout << "**** Error in Data::gather(...), unknown VARIABLE_NATURE specified." << std::endl;
 				}	
@@ -605,7 +608,7 @@ public:
 				// nodes that are actually used recieve the proper accumulated values before communication.
 				if(natureOne == NEW_SOLIDS){ localReduceAll(overlap, NATURE); localBroadcastAll(overlap, NATURE);}
 				// Export the information from the overlap vector into the owned vector, using the Add combine mode.
-				queryEpetraDict(overlap)->Export(*(queryEpetraDict(owned)), *myExporter, Epetra_CombineMode::Add);
+				queryEpetraDict(owned)->Export(*(queryEpetraDict(overlap)), *myExporter, Epetra_CombineMode::Epetra_AddLocalAlso);
 			}
 
 			if(natureOne == OLD_SOLIDS)

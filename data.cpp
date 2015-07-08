@@ -115,7 +115,7 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
      */
     // Get the model geometry parameters from the parameter list, adapting to 1 to N spatial dimensions and 0 to N extended dimensions
     Teuchos::RCP<Teuchos::ParameterList> geometryParams = Teuchos::rcpFromRef( masterParams->sublist("Geometry", true));
-    std::vector<std::string> SPACESHAPE_STRING_VEC = split(geometryParams->get<std::string>("DIMENSIONS_SPATIAL_AND_PLACEHOLDER", "40"), ',');
+    std::vector<std::string> SPACESHAPE_STRING_VEC = split(geometryParams->get<std::string>("DIMENSIONS_SPATIAL_AND_PLACEHOLDER", "12"), ',');
     std::vector<int> SPACESHAPE;
     SPACESHAPE.reserve(SPACESHAPE_STRING_VEC.size());
 
@@ -130,7 +130,7 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 
 		// How dense is our uniform discretization?
     DOTPITCH = geometryParams->get<double>("DOTPITCH", 1.0); // The distance between points on the regular grid, those points differing by a single coordinate value
-    HORIZON = geometryParams->get<double>("HORIZON", 3.1); // The radius used for neighborhood building and model evaluation
+    HORIZON = geometryParams->get<double>("HORIZON", 1.1); // The radius used for neighborhood building and model evaluation
 
 		// Given the density of our discretization and the measurements of the rectangular prismatic body, how many nodes
 		// do we count along each of the x, y and z axes?
@@ -509,29 +509,43 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 
 	tock(INITIALISATION);
 
-	scatter("owned_orig_coords", "overlap_orig_coords");
-	scatter("owned_orig_coords_wdup", "overlap_orig_coords_wdup");
+	std::cout << "SCATTERING... " << std::endl;
 	scatter("owned_curr_coords", "overlap_curr_coords");
 	scatter("owned_curr_coords_wdup", "overlap_curr_coords_wdup");
 
-	std::cout << "\nowned_orig_coords: " << std::endl;
-	queryEpetraDict("owned_orig_coords")->Print(std::cout);
 
 	std::cout << "\nowned_curr_coords: " << std::endl;
 	queryEpetraDict("owned_curr_coords")->Print(std::cout);
 
-	std::cout << "\noverlap_orig_coords: " << std::endl;
-	queryEpetraDict("overlap_orig_coords")->Print(std::cout);
+	std::cout << "\nowned_curr_coords_wdup: " << std::endl;
+	queryEpetraDict("owned_curr_coords_wdup")->Print(std::cout);
 
 	std::cout << "\noverlap_curr_coords: " << std::endl;
 	queryEpetraDict("overlap_curr_coords")->Print(std::cout);
 
-	std::cout << "\noverlap_orig_coords_wdup: " << std::endl;
-	queryEpetraDict("overlap_orig_coords_wdup")->Print(std::cout);
-
 	std::cout << "\noverlap_curr_coords_wdup: " << std::endl;
 	queryEpetraDict("overlap_curr_coords_wdup")->Print(std::cout);
 
+	std::cout << "GATHERING... " << std::endl;
+
+
+	queryEpetraDict("overlap_curr_coords_wdup")->PutScalar(1000.0);
+	
+	gather("owned_curr_coords", "overlap_curr_coords");
+	gather("owned_curr_coords_wdup", "overlap_curr_coords_wdup");
+
+
+	std::cout << "\nowned_curr_coords: " << std::endl;
+	queryEpetraDict("owned_curr_coords")->Print(std::cout);
+
+	std::cout << "\nowned_curr_coords_wdup: " << std::endl;
+	queryEpetraDict("owned_curr_coords_wdup")->Print(std::cout);
+
+	std::cout << "\noverlap_curr_coords: " << std::endl;
+	queryEpetraDict("overlap_curr_coords")->Print(std::cout);
+
+	std::cout << "\noverlap_curr_coords_wdup: " << std::endl;
+	queryEpetraDict("overlap_curr_coords_wdup")->Print(std::cout);
 
 	
 
