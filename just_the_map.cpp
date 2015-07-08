@@ -41,7 +41,7 @@ int main(int argc,char * argv[]) {
 		// These ten nodes are not connected to the nodes on other processors.
 		// Instead, they are all locally connected, such that each owned neighborhood
 		// contains each of the owned nodes.
-		const long long int NUM_OWNED_NODES_PER_PROC(1000);
+		const long long int NUM_OWNED_NODES_PER_PROC(5);
 		const long long int NUM_GLOBAL_NODES(p*NUM_OWNED_NODES_PER_PROC);
 		const long long int NUM_OWNED_BONDS(NUM_OWNED_NODES_PER_PROC*NUM_OWNED_NODES_PER_PROC);
 		const long long int MY_START_GID(id*NUM_OWNED_NODES_PER_PROC);
@@ -94,9 +94,8 @@ int main(int argc,char * argv[]) {
 			// This is needed because Epetra_BlockMap is not designed for duplication.
 			overlapWdupBlockMap = Teuchos::rcp(new Epetra_BlockMap(-1, NUM_OWNED_BONDS, duplicateNeighborGIDs.data(), element_size, index_base, EpetraComm));
 
-			// For the owned GIDs, find the corresponding single 'master' LID
 			// Keep track of which are the master LIDs
-			for(auto itval : myOwnedNodes){
+			for(auto itval : duplicateNeighborGIDs){
 				GIDtoMasterLID[itval] = overlapWdupBlockMap->LID(itval);
 				myMasterLIDs.push_back(overlapWdupBlockMap->LID(itval)); // Only one master LID per GID in the map.
 			}
@@ -142,14 +141,14 @@ int main(int argc,char * argv[]) {
 		Teuchos::RCP<Epetra_Import> importer = Teuchos::rcp(new Epetra_Import(*overlapWdupBlockMap, *ownedMap));
 
 		int *exportLIDs = exporter->ExportLIDs();
-		//exporter->Print(std::cout);
+		exporter->Print(std::cout);
 
 		//overlapWdupVector->Import(*ownedVector, *importer, Epetra_CombineMode::Add);
 		localReduceAll(overlapWdupVector, cloneToMasterLID, element_size);
 		localBroadcastAll(overlapWdupVector, masterToCloneLIDs, myMasterLIDs, element_size);
 		ownedVector->Export(*overlapWdupVector, *exporter, Epetra_CombineMode::Add);
 
-		ownedVector->Print(std::cout);
+		//ownedVector->Print(std::cout);
 		//overlapWdupVector->Print(std::cout);
 
     MPI::Finalize();

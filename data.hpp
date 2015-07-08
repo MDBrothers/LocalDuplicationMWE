@@ -1,8 +1,5 @@
 #ifndef DATA_H
 #define DATA_H
-
-#include "data.hpp"
-
 // Third Party
 #include <flann/flann.hpp>
 #include <mpi.h>
@@ -46,7 +43,6 @@
 #include "Teuchos_XMLParameterListHelpers.hpp"
 
 namespace PrimaryNS {
-
 	enum VARIABLE_NATURE{
 		NEW_SOLIDS,
 		OLD_SOLIDS,
@@ -59,6 +55,7 @@ namespace PrimaryNS {
 		OVERLAP
 	};
 
+}
 
 	//Full specialization of hash for my enums. We do full specialization to comply with standards by using defined behavior
 	//here to better future proof the code. This code was based on a solution from
@@ -66,22 +63,24 @@ namespace PrimaryNS {
 	// http://stackoverflow.com/questions/9646297/c11-hash-function-for-any-enum-type
 	// Accessed: July 7, 2015
 	namespace std{
-	template<> struct hash<VARIABLE_NATURE> {
-	 using bogotype = typename std::enable_if<std::is_enum<VARIABLE_NATURE>::value, VARIABLE_NATURE>::type;
+	template<> struct hash<PrimaryNS::VARIABLE_NATURE> {
+	 using bogotype = typename std::enable_if<std::is_enum<PrimaryNS::VARIABLE_NATURE>::value, PrimaryNS::VARIABLE_NATURE>::type;
 			  public:
-		    size_t operator()(const VARIABLE_NATURE&e) const {
-			return std::hash<typename std::underlying_type<VARIABLE_NATURE>::type>()(e);
+		    size_t operator()(const PrimaryNS::VARIABLE_NATURE&e) const {
+			return std::hash<typename std::underlying_type<PrimaryNS::VARIABLE_NATURE>::type>()(e);
 			  }
 	 };
 
-	template<> struct hash<VARIABLE_ROLE> {
-	 using bogotype = typename std::enable_if<std::is_enum<VARIABLE_ROLE>::value, VARIABLE_ROLE>::type;
+	template<> struct hash<PrimaryNS::VARIABLE_ROLE> {
+	 using bogotype = typename std::enable_if<std::is_enum<PrimaryNS::VARIABLE_ROLE>::value, PrimaryNS::VARIABLE_ROLE>::type;
 			  public:
-		    size_t operator()(const VARIABLE_ROLE&e) const {
-			return std::hash<typename std::underlying_type<VARIABLE_ROLE>::type>()(e);
+		    size_t operator()(const PrimaryNS::VARIABLE_ROLE&e) const {
+			return std::hash<typename std::underlying_type<PrimaryNS::VARIABLE_ROLE>::type>()(e);
 			  }
 	 };
 	}
+
+namespace PrimaryNS{
 
 
 // The data class stores connectivity information as well as the other distributed structures
@@ -285,15 +284,15 @@ private:
     /*
      * Local connectivity
      */
-    std::vector<int> myGlobalOwnedIds;
+    std::vector<int> myGlobalOwnedIDs;
     std::vector<int> ownedNeighborhoodLengths;
     std::vector<std::vector<int> > ownedNeighborhoods;
 
     // These maps help us perform local broadcasting as well as local reduction
     // to complement the on-network communications that Epetra handles for us.
-    std::multimap<long long int, long long int> cloneToMasterLID;
-    std::vector<long long int> myMasterLIDs;
-    std::vector<std::vector< long long int> > masterToCloneLIDs;
+    std::multimap<int, int> cloneToMasterLID;
+    std::vector<int> myMasterLIDs;
+    std::map<int, std::vector< int> > masterToCloneLIDs;
 
     /*
      * For plotting
@@ -373,7 +372,8 @@ public:
 
 private:
 
-		std::unordered_map<VARIABLE_ROLE, VARIABLE_NATURE > varNameToVarArchetypeDict; // keys are variable names
+		std::map<std::string, VARIABLE_ROLE > varNameToVarRoleDict; // keys are variable names
+		std::map<std::string, VARIABLE_NATURE > varNameToVarNatureDict; // keys are variable names
 
 		// This method is called automatically during every scatter.
 		void localBroadcastAll(std::string overlap, VARIABLE_NATURE NATURE){
@@ -393,16 +393,14 @@ private:
 			// Give us read/write access to the Epetra_Vector through a pointer.
 			double* myOverlapPtr(queryEpetraDictForValues(overlap));
 
-			long long int MLID_Ordinal(0);
-			for(auto masterVector: masterToCloneLIDs){
-				for(auto cloneLID : masterVector){
+			for(auto masterToClonePair: masterToCloneLIDs){
+				for(auto cloneLID : masterToClonePair.second){
 					const int cloneScaledIndex(cloneLID*DIMENSION);
-					const int masterScaledIndex(myMasterLIDs[MLID_Ordinal]*DIMENSION);
-					for(int dof(0); dof<i DIMENSION; ++ dof){
+					const int masterScaledIndex(masterToClonePair.first*DIMENSION);
+					for(int dof(0); dof< DIMENSION; ++ dof){
 						myOverlapPtr[cloneScaledIndex + dof] = myOverlapPtr[masterScaledIndex + dof];
 					}
 				}
-				++ MLID_Ordinal;
 			}
 
 			tock(LOCAL_BROADCAST);
@@ -438,9 +436,6 @@ private:
 			// This vector is vector for storing the overlap force itself, not just the reactions.
 			double* myOverlapPtr(queryEpetraDictForValues(overlap));
 
-			const int DIMENSION(myElement_Size);
-			double* myOverlapPtr(myOverlapWdupVector->Values());
-
 			// For every clone LID, add its reaction into the entries for the corresponding master LID
 			// Since only one of a set of equivalent master LID and clone LIDs leads a neighborhood,
 			// we need not worry about multiplication of force evaluations, since:
@@ -469,10 +464,12 @@ public:
 
 	void scatter(std::string variableOne, std::string variableTwo){
 			VARIABLE_NATURE NATURE(BLANK);
-			std::pair<VARIABLE_ROLE, VARIABLE_NATURE> one(varNameToVarArchetypeDict[variableOne]);
-			std::pair<VARIABLE_ROLE, VARIABLE_NATURE> two(varNameToVarArchetypeDict[variableTwo]);
+			VARIABLE_NATURE natureOne(varNameToVarNatureDict[variableOne]);
+			VARIABLE_NATURE natureTwo(varNameToVarNatureDict[variableTwo]);
+			VARIABLE_ROLE roleOne(varNameToVarRoleDict[variableOne]);
+			VARIABLE_ROLE roleTwo(varNameToVarRoleDict[variableTwo]);
 
-			if(one.second == OLD_SOLIDS)
+			if(natureOne == OLD_SOLIDS)
 				tick(OLD_SCATTER);
 			else
 				tick(NEW_SCATTER);
@@ -481,16 +478,16 @@ public:
 			Teuchos::RCP<Epetra_Import> myImporter;
 
 			// Fail, We can't scatter scalar->vector or vector->scalar etc in this method.
-			if(one.second != two.second) {
+			if(natureOne != natureTwo) {
 				std::cout << "**** Error in Data::scatter(...), incompatible VARIABLE_NATURE (solids, multiphysics, scalar) for arguments." << std::endl;
 			}
 			// Fail, If they're both owned or both overlap, just copy them locally.
-			else if( one.first == two.first){
+			else if( roleOne == roleTwo ){
 				std::cout << "**** Error in Data::scatter(...), VARIABLE_ROLE (overlap, owned) must differ between the arguments." << std::endl;
 			}
 			else{
 				// Success, Check if we have a valid owned and overlap duo before communication is initiated.
-				switch(one.first){
+				switch(roleOne){
 					case OVERLAP:
 						overlap = variableOne;
 						break;
@@ -501,7 +498,7 @@ public:
 						std::cout << "**** Error in Data::scatter(...), argument one must be either overlap or owned." << std::endl;
 						NATURE = ERROR;
 				}
-				switch(two.first){
+				switch(roleTwo){
 					case OVERLAP:
 						overlap = variableTwo;
 						break;
@@ -514,7 +511,7 @@ public:
 				}
 
 				// Change NATURE from an error code to what the first argument says its VARIABLE_NATURE is.
-				if(NATURE == BLANK) NATURE = one.second;
+				if(NATURE == BLANK) NATURE = natureOne;
 
 				switch(NATURE){
 				 	case NEW_SOLIDS:
@@ -530,11 +527,11 @@ public:
 				// Import the information from the owned vector into the overlap vector.
 				queryEpetraDict(overlap)->Import(*(queryEpetraDict(owned)), *myImporter, Epetra_CombineMode::Insert);
 				// Perform local broadcast since Import modified only one local clone, called the master.
-				if(one.second == NEW_SOLIDS)
+				if(natureOne == NEW_SOLIDS)
 				localBroadcastAll(overlap, NATURE);
 			}
 
-			if(one.second == OLD_SOLIDS)
+			if(natureOne == OLD_SOLIDS)
 				tock(OLD_SCATTER);
 			else
 				tock(NEW_SCATTER);
@@ -543,10 +540,12 @@ public:
 
 		void gather(std::string variableOne, std::string variableTwo){
 			VARIABLE_NATURE NATURE(BLANK);
-			std::pair<VARIABLE_ROLE, VARIABLE_NATURE> one(varNameToVarArchetypeDict[variableOne]);
-			std::pair<VARIABLE_ROLE, VARIABLE_NATURE> two(varNameToVarArchetypeDict[variableTwo]);
+			VARIABLE_NATURE natureOne(varNameToVarNatureDict[variableOne]);
+			VARIABLE_NATURE natureTwo(varNameToVarNatureDict[variableTwo]);
+			VARIABLE_ROLE roleOne(varNameToVarRoleDict[variableOne]);
+			VARIABLE_ROLE roleTwo(varNameToVarRoleDict[variableTwo]);
 
-			if(one.second == OLD_SOLIDS)
+			if(natureOne == OLD_SOLIDS)
 				tick(OLD_GATHER);
 			else
 				tick(NEW_GATHER);
@@ -555,16 +554,16 @@ public:
 			Teuchos::RCP<Epetra_Export> myExporter;
 
 			// Fail, We can't scatter scalar->vector or vector->scalar etc in this method.
-			if(one.second != two.second) {
+			if(natureOne != natureTwo) {
 				std::cout << "**** Error in Data::gather(...), incompatible VARIABLE_NATURE (solids, multiphysics, scalar) for arguments." << std::endl;
 			}
 			// Fail, If they're both owned or both overlap, just copy them locally.
-			else if( one.first == two.first){
+			else if( roleOne == roleTwo){
 				std::cout << "**** Error in Data::gather(...), VARIABLE_ROLE (overlap, owned) must differ between the arguments." << std::endl;
 			}
 			else{
 				// Success, Check if we have a valid owned and overlap duo before communication is initiated.
-				switch(one.first){
+				switch(roleOne){
 					case OVERLAP:
 						overlap = variableOne;
 						break;
@@ -575,7 +574,7 @@ public:
 						std::cout << "**** Error in Data::gather(...), argument one must be either overlap or owned." << std::endl;
 						NATURE = ERROR;
 				}
-				switch(two.first){
+				switch(roleTwo){
 					case OVERLAP:
 						overlap = variableTwo;
 						break;
@@ -588,7 +587,7 @@ public:
 				}
 
 				// Change NATURE from an error code to what the first argument says its VARIABLE_NATURE is.
-				if(NATURE == BLANK) NATURE = one.second;
+				if(NATURE == BLANK) NATURE = natureOne;
 
 				switch(NATURE){
 				 	case NEW_SOLIDS:
@@ -604,12 +603,12 @@ public:
 				// are not actually the ones looked at by export, instead some clone LIDs are selected. This behavior was identified
 				// in the map_test. It just means that after reduction, the master values have to be broadcast so the arbitrary clone
 				// nodes that are actually used recieve the proper accumulated values before communication.
-				if(one.second == NEW_SOLIDS){ localReduceAll(overlap, NATURE); localBroadcastAll(overlap, NATURE);}
+				if(natureOne == NEW_SOLIDS){ localReduceAll(overlap, NATURE); localBroadcastAll(overlap, NATURE);}
 				// Export the information from the overlap vector into the owned vector, using the Add combine mode.
 				queryEpetraDict(overlap)->Export(*(queryEpetraDict(owned)), *myExporter, Epetra_CombineMode::Add);
 			}
 
-			if(one.second == OLD_SOLIDS)
+			if(natureOne == OLD_SOLIDS)
 				tock(OLD_GATHER);
 			else
 				tock(NEW_GATHER);
@@ -639,7 +638,7 @@ private:
 		/*
 		 * Global values duplicated locally. The values stored here include: timestep information, number of linear iterations, number of nonlinear iterations
 		 */
-		std::unordered_map<std::string, double> globalVarHashmap; // A very fast single element random access optimized container 
+		std::map<std::string, double> globalVarHashmap; // A very fast single element random access optimized container 
 
 public:
 		/*
@@ -670,10 +669,10 @@ private:
 		std::vector<std::string> OVERLAP_SOLIDS_VEC_VAR_NAMES;
 		std::vector<std::string> OVERLAP_SOLIDS_VEC_VAR_WDUP_NAMES;
 
-		std::unordered_map<std::string, int > ownedSolidsVectorIndexDict;
-		std::unordered_map<std::string, int > ownedSolidsVectorWdupIndexDict;
-		std::unordered_map<std::string, int > overlapSolidsVectorIndexDict;
-		std::unordered_map<std::string, int > overlapSolidsVectorWdupIndexDict;
+		std::map<std::string, int > ownedSolidsVectorIndexDict;
+		std::map<std::string, int > ownedSolidsVectorWdupIndexDict;
+		std::map<std::string, int > overlapSolidsVectorIndexDict;
+		std::map<std::string, int > overlapSolidsVectorWdupIndexDict;
 
 
     /*
@@ -693,7 +692,7 @@ private:
     inline int lidToGid(const int lid, const int offset, const int dimension);
 
     // Use base-MODULE arithmetic per coordinate to cycle through coordinate combinations
-    inline void incrementCoordinates(std::vector<int>& NUM_OF_SOLIDS_COORD_N, std::vector<int>& coordinates);
+    inline void incrementCoordinates(std::vector<int>& NUM_OF_SOLIDS_COORD_N, std::vector<int>& coords);
 
     // Generate the n-rectangular grid, regardless of how many or how few spatial dimensions are specified
     void specifyRectangularGrid(std::vector<double>& vertices, const double DOTPITCH, std::vector<int>& NUM_OF_SOLIDS_COORD_N );
@@ -709,114 +708,136 @@ public:
     };
 
     double* queryEpetraDictForValues(const std::string& varName) {
-				tick(LOOKUP);
-				std::unordered_map<std::string, int>::iterator myIndexMapIterator;
-				const std::pair<VARIABLE_ROLE, VARIABLE_NATURE> METADATA(varNameToVarArchetypeDict[varName]);
-				int index(-99);
+	tick(LOOKUP);
+	std::map<std::string, int>::iterator myIndexMapIterator;
+	VARIABLE_NATURE natureOne(varNameToVarNatureDict[varName]);
+	VARIABLE_ROLE roleOne(varNameToVarRoleDict[varName]);
+	std::cout << "Var nature is: " << natureOne << std::endl;
+	std::cout << "Var role is: " << roleOne << std::endl;
+	std::cout << "Var name is: " << varName << std::endl;
+	std::cout << OLD_SOLIDS << std::endl;
 
-				switch(METADATA.first){
-					case OWNED:
-						switch(METADATA.second){
-							case NEW_SOLIDS:
-								myIndexMapIterator = ownedSolidsVectorIndexDict.find(varName);
-								if(myIndexMapIterator != ownedSolidsVectorIndexDict.end()){
-									index = myIndexMapIterator->second;
-									return (*ownedSolidsMultiVector)(index)->Values();
-								}
-								break;
-								case OLD_SOLIDS:
-								myIndexMapIterator = ownedSolidsVectorIndexDict.find(varName);
-								if(myIndexMapIterator != ownedSolidsVectorIndexDict.end()){
-									index = myIndexMapIterator->second;
-									return (*overlapSolidsMultiVector)(index)->Values();
-								}
-								break;
-								default:
-								std::cout << "**** Error in Data::queryEpetraDictForValues(...), VARIABLE_NATURE invalid or not well defined for " << varName << std::endl;
-						}
-						break;
-					case OVERLAP:
-						switch(METADATA.second){
-							case NEW_SOLIDS:
-								myIndexMapIterator = overlapSolidsVectorWdupIndexDict.find(varName);
-if(myIndexMapIterator != overlapSolidsVectorWdupIndexDict.end()){
-									index = myIndexMapIterator->second;
-									return (*overlapSolidsMultiVector)(index)->Values();
-								}
+	int index(-99);
 
-								break;
-						case OLD_SOLIDS:
-								myIndexMapIterator = overlapSolidsVectorIndexDict.find(varName);
-								if(myIndexMapIterator != overlapSolidsVectorIndexDict.end()){
-									index = myIndexMapIterator->second;
-									return (*overlapSolidsMultiVector)(index)->Values();
-								}
-								break;
-							default:
-								std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_NATURE invalid or not well defined for " varName << std::endl;
-						}
-						break;
-					default:
-						std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_ROLE invalid or not well defined for " << varName << std::endl;
-				}
-				tock(LOOKUP);
+	try{
+	switch(roleOne){
+		case OWNED:
+			switch(natureOne){
+				case NEW_SOLIDS:
+					myIndexMapIterator = ownedSolidsVectorWdupIndexDict.find(varName);
+					if(myIndexMapIterator != ownedSolidsVectorWdupIndexDict.end()){
+						index = myIndexMapIterator->second;
+						return (*ownedSolidsMultiVectorWdup)(index)->Values();
+					}
+					throw(-1);
+					break;
+				case OLD_SOLIDS:
+					myIndexMapIterator = ownedSolidsVectorIndexDict.find(varName);
+					if(myIndexMapIterator != ownedSolidsVectorIndexDict.end()){
+						index = myIndexMapIterator->second;
+						return (*overlapSolidsMultiVector)(index)->Values();
+					}
+					throw(-1);
+				break;
+				default:
+				std::cout << "**** Error in Data::queryEpetraDictForValues(...), VARIABLE_NATURE invalid or not well defined for " << varName << std::endl;
+			}
+			break;
+		case OVERLAP:
+			switch(natureOne){
+				case NEW_SOLIDS:
+					myIndexMapIterator = overlapSolidsVectorWdupIndexDict.find(varName);
+					if(myIndexMapIterator != overlapSolidsVectorWdupIndexDict.end()){
+						index = myIndexMapIterator->second;
+						return (*overlapSolidsMultiVectorWdup)(index)->Values();
+					}
+					throw(-1);
+					break;
+			case OLD_SOLIDS:
+					myIndexMapIterator = overlapSolidsVectorIndexDict.find(varName);
+					if(myIndexMapIterator != overlapSolidsVectorIndexDict.end()){
+						index = myIndexMapIterator->second;
+						return (*overlapSolidsMultiVector)(index)->Values();
+					}
+					throw(-1);
+					break;
+				default:
+					std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_NATURE invalid or not well defined for " << varName << std::endl;
+			}
+			break;
+		default:
+			std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_ROLE invalid or not well defined for " << varName << std::endl;
+	}
+	}
+	catch(int Error){std::cout << varName << " not found in queryEpetraDictForValues!" << std::endl;}
+	tock(LOOKUP);
     };
 
 
 private:
 
     Epetra_Vector* queryEpetraDict(const std::string& varName) {
-				tick(LOOKUP);
-				std::unordered_map<std::string, int>::iterator myIndexMapIterator;
-				const std::pair<VARIABLE_ROLE, VARIABLE_NATURE> METADATA(varNameToVarArchetypeDict[varName]);
-				int index(-99);
+	tick(LOOKUP);
+	std::map<std::string, int>::iterator myIndexMapIterator;
+	VARIABLE_NATURE natureOne(varNameToVarNatureDict[varName]);
+	VARIABLE_ROLE roleOne(varNameToVarRoleDict[varName]);
 
-				switch(METADATA.first){
-					case OWNED:
-						switch(METADATA.second){
-							case NEW_SOLIDS:
-								myIndexMapIterator = ownedSolidsVectorIndexDict.find(varName);
-								if(myIndexMapIterator != ownedSolidsVectorIndexDict.end()){
-									index = myIndexMapIterator->second;
-									return (*ownedSolidsMultiVector)(index);
-								}
-								break;
-								case OLD_SOLIDS:
-								myIndexMapIterator = ownedSolidsVectorIndexDict.find(varName);
-								if(myIndexMapIterator != ownedSolidsVectorIndexDict.end()){
-									index = myIndexMapIterator->second;
-									return (*overlapSolidsMultiVector)(index);
-								}
-								break;
-								default:
-								std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_NATURE invalid or not well defined for " varName << std::endl;
-						}
-						break;
-					case OVERLAP:
-						switch(METADATA.second){
-							case NEW_SOLIDS:
-								myIndexMapIterator = overlapSolidsVectorWdupIndexDict.find(varName);
-if(myIndexMapIterator != overlapSolidsVectorWdupIndexDict.end()){
-									index = myIndexMapIterator->second;
-									return (*overlapSolidsMultiVector)(index);
-								}
+	int index(-99);
 
-								break;
-						case OLD_SOLIDS:
-								myIndexMapIterator = overlapSolidsVectorIndexDict.find(varName);
-								if(myIndexMapIterator != overlapSolidsVectorIndexDict.end()){
-									index = myIndexMapIterator->second;
-									return (*overlapSolidsMultiVector)(index);
-								}
-								break;
-							default:
-								std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_NATURE invalid or not well defined for " varName << std::endl;
-						}
-						break;
-					default:
-						std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_ROLE invalid or not well defined for " << varName << std::endl;
-				}
-				tock(LOOKUP);
+	try{
+	switch(roleOne){
+		case OWNED:
+			switch(natureOne){
+				case NEW_SOLIDS:
+					myIndexMapIterator = ownedSolidsVectorWdupIndexDict.find(varName);
+					if(myIndexMapIterator != ownedSolidsVectorWdupIndexDict.end()){
+						index = myIndexMapIterator->second;
+						return (*ownedSolidsMultiVectorWdup)(index);
+					}
+					throw(-1);
+					break;
+				case OLD_SOLIDS:
+					myIndexMapIterator = ownedSolidsVectorIndexDict.find(varName);
+					if(myIndexMapIterator != ownedSolidsVectorIndexDict.end()){
+						index = myIndexMapIterator->second;
+						return (*overlapSolidsMultiVector)(index);
+					}
+					throw(-1);
+					break;
+				default:
+				std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_NATURE invalid or not well defined for " << varName << std::endl;
+			}
+			break;
+		case OVERLAP:
+			switch(natureOne){
+				case NEW_SOLIDS:
+					myIndexMapIterator = overlapSolidsVectorWdupIndexDict.find(varName);
+					if(myIndexMapIterator != overlapSolidsVectorWdupIndexDict.end()){
+						index = myIndexMapIterator->second;
+						return (*overlapSolidsMultiVectorWdup)(index);
+					}
+					throw(-1);
+					break;
+				case OLD_SOLIDS:
+					myIndexMapIterator = overlapSolidsVectorIndexDict.find(varName);
+					if(myIndexMapIterator != overlapSolidsVectorIndexDict.end()){
+						index = myIndexMapIterator->second;
+						return (*overlapSolidsMultiVector)(index);
+					}
+					throw(-1);
+					break;
+				default:
+				std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_NATURE invalid or not well defined for " << varName << std::endl;
+			}
+			break;
+		default:
+			std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_ROLE invalid or not well defined for " << varName << std::endl;
+	}
+	}
+	catch(int Error){
+		std::cout << varName << " not foundi in queryEpetraDict!" << std::endl;
+	}
+	tock(LOOKUP);
     };
 
 public:

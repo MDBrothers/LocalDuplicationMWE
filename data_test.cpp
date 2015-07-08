@@ -1,7 +1,7 @@
 #include "main.hpp"
 #include "kernels.hpp"
 //GLOBALS
-const int NUM_ITERATIONS;
+const int NUM_ITERATIONS(1000);
 
 enum TIMER_CATEGORY{
 	OLD_GATHER,
@@ -14,6 +14,16 @@ enum TIMER_CATEGORY{
 	OLD_FULL,
 	NEW_FULL
 };
+
+namespace std{
+template<> struct hash<TIMER_CATEGORY> {
+ using bogotype = typename std::enable_if<std::is_enum<TIMER_CATEGORY>::value, TIMER_CATEGORY>::type;
+		  public:
+	    size_t operator()(const TIMER_CATEGORY&e) const {
+		return std::hash<typename std::underlying_type<TIMER_CATEGORY>::type>()(e);
+		  }
+ };
+}
 
 std::unordered_map<TIMER_CATEGORY, double> accumulatedTimes;
 std::unordered_map<TIMER_CATEGORY, std::chrono::steady_clock::time_point> timePoints;
@@ -28,11 +38,9 @@ void tock(TIMER_CATEGORY TIMER);
 
 void finaliseTimes();
 
-bool oldIsValid(PrimaryNS::Data &data);
+bool integrityCheckOnOld(PrimaryNS::Data &data);
 
-bool newIsValid(PrimaryNS::Data &data);
-
-bool oldIsValid(PrimaryNS::Data &data);
+bool integrityCheckOnNew(PrimaryNS::Data &data);
 
 void oldGatherTest(PrimaryNS::Data &data);
 
@@ -50,7 +58,7 @@ void oldFullTest(PrimaryNS::Data &data);
 
 void newFullTest(PrimaryNS::Data &data);
 
-void reportAverageTimes(const int myID, Epetra_MpiComm &myEpetraComm);
+void reportAverageTimes(Epetra_MpiComm &myEpetraComm);
 
 int main(int argc,char * argv[]) {
     // Initialize the MPI and Epetra communicators
@@ -59,9 +67,9 @@ int main(int argc,char * argv[]) {
     const int p = MPI::COMM_WORLD.Get_size();
     const int id = MPI::COMM_WORLD.Get_rank();
 
-		for(int timeName(OLD_GATHER); timeName <= NEW_FULL; ++ timeName){
-			accumulatedTimes[timeName] = 0.0;
-		}
+    for(auto it : timeNames){
+    	accumulatedTimes[it.first] = 0.0;
+    }
 
     // Get all input parameters
     // Input file name should have been the last argument specified
@@ -71,9 +79,10 @@ int main(int argc,char * argv[]) {
     Teuchos::updateParametersFromXmlFile(inputFileName, mpPointer);
 
     //Create data object(s)
-		tick(INITIALIZE_ALL);
+	tick(INITIALIZE_ALL);
     PrimaryNS::Data myData( masterParams, EpetraComm, p , id);
-		tock(INITIALIZE_ALL);
+	std::cout << "Initialized: " << id << " of " << p << std::endl;
+	tock(INITIALIZE_ALL);
 
 		bool oldIsValid(integrityCheckOnNew(myData));
 		if(id == 0){
@@ -81,7 +90,7 @@ int main(int argc,char * argv[]) {
 			else std::cout << "Old code does not pass model evaluation integrity check." << std::endl;
 		}
 
-		bool newIsValid(integrityCheckOneOld(myData));
+		bool newIsValid(integrityCheckOnOld(myData));
 		if(id == 0){
 			if(newIsValid) std::cout << "New code passes model evaluation integrity check." << std::endl;
 			else std::cout << "New code does not pass model evaluation integrity check." << std::endl;
@@ -122,7 +131,7 @@ int main(int argc,char * argv[]) {
 
 			finaliseTimes();
 
-			reportAverageTimes(id);
+			reportAverageTimes(EpetraComm);
 		}
 		else{
 			std::cout << "Rank: " << id << ", part 2 of the test cannot proceed." << std::endl;
@@ -143,44 +152,41 @@ void tock(TIMER_CATEGORY TIMER){
 }
 
 void finaliseTimes(){
-		for(int timeName(OLD_GATHER); timeName <= NEW_FULL; ++ timeName){
-			accumulatedTimes[timeName] *= std::chorno::steady_clock::period::num()/ std::chrono::steady_clock::period::den();  
-		}
+	for(auto it : timeNames){
+		accumulatedTimes[it.first] *= std::chrono::steady_clock::period::num/ std::chrono::steady_clock::period::den;  
+	}
 }
 
-bool oldIsValid(PrimaryNS::Data &data);
+bool integrityCheckOnOld(PrimaryNS::Data &data){return false;}
 
-bool newIsValid(PrimaryNS::Data &data);
+bool integrityCheckOnNew(PrimaryNS::Data &data){return false;}
 
-bool oldIsValid(PrimaryNS::Data &data);
+void oldGatherTest(PrimaryNS::Data &data){}
 
-void oldGatherTest(PrimaryNS::Data &data);
+void newGatherTest(PrimaryNS::Data &data){}
 
-void newGatherTest(PrimaryNS::Data &data);
+void oldScatterTest(PrimaryNS::Data &data){}
 
-void oldScatterTest(PrimaryNS::Data &data);
+void newScatterTest(PrimaryNS::Data &data){}
 
-void newScatterTest(PrimaryNS::Data &data);
+void oldKernelEvaluateTest(PrimaryNS::Data &data){}
 
-void oldKernelEvaluateTest(PrimaryNS::Data &data);
+void newKernelEvalauteTest(PrimaryNS::Data &data){}
 
-void newKernelEvalauteTest(PrimaryNS::Data &data);
+void oldFullTest(PrimaryNS::Data &data){}
 
-void oldFullTest(PrimaryNS::Data &data);
-
-void newFullTest(PrimaryNS::Data &data);
+void newFullTest(PrimaryNS::Data &data){}
 
 void reportAverageTimes(Epetra_MpiComm &myEpetraComm){
 	double myTime(0.0), globalSumTime(0.0);
-	for(int timeName(OLD_GATHER); timeName <= NEW_FULL; ++ timeName){
-			myTime = accumulatedTimes[timeName];  
-			globalSumTime = 0.0;
-			myEpetraComm.SumAll(&myTime, &globalSumTime, 1);
-			if(myEpetraComm.MyPID == 0) std::cout << "Average " << timeNames[timeName] << " time per iteration, averaged over all processors\n
-				was: " << (globalSumTime/myEpetraComm.NumProcs())/NUM_ITERATIONS << std::endl;
+	for(auto it: timeNames){
+		myTime = accumulatedTimes[it.first];  
+		globalSumTime = 0.0;
+		myEpetraComm.SumAll(&myTime, &globalSumTime, 1);
+		if(myEpetraComm.MyPID() == 0) std::cout << "Average " << timeNames[it.first] << 
+		" time per iteration, averaged over all processors\n was: " << 
+		(globalSumTime/myEpetraComm.NumProc())/NUM_ITERATIONS << std::endl;
 	}
-
-		
 	
-};
+}
 

@@ -20,7 +20,7 @@ libplot3d.so:
 	mpicxx $(CXX_FLAGS) -shared -fPIC plot3d.cpp -o libplot3d.so -lGLU -lGL
 
 libdata.so: data.cpp data.hpp
-	mpicxx $(CXX_FLAGS) -shared -fPIC data.cpp $(THIRD_PARTY)
+	mpicxx $(CXX_FLAGS) -shared -fPIC data.cpp -o libdata.so $(THIRD_PARTY)
 
 clean:
 	rm *.so main *_test

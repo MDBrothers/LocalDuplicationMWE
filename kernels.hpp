@@ -1,4 +1,3 @@
-#include "kernels.hpp"
 #include <cmath>
 
 
