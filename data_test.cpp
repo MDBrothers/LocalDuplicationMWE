@@ -157,7 +157,14 @@ void finaliseTimes(){
 	}
 }
 
-bool integrityCheckOnOld(PrimaryNS::Data &data){return false;}
+bool integrityCheckOnOld(PrimaryNS::Data &data){
+	const double * xOverlap( data.queryEpetraDictForValues("overlap_orig_coords") );
+	const double * yOverlap( data.queryEpetraDictForValues("overlap_curr_coords") );
+	double * fInternalOverlap( data.queryEpetraDictForValues("overlap_force") );
+	const int * localIndices;
+	const int * neighborhoodLengths;
+
+return false;}
 
 bool integrityCheckOnNew(PrimaryNS::Data &data){return false;}
 
