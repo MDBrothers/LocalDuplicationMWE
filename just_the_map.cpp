@@ -47,6 +47,11 @@ int main(int argc,char * argv[]) {
 		const long long int MY_START_GID(id*NUM_OWNED_NODES_PER_PROC);
 		const long long int MY_LIMIT_GID((id+1)*NUM_OWNED_NODES_PER_PROC);
 
+		if(id == 0){
+			std::cout << "Number of owned nodes per processor: " << NUM_OWNED_NODES_PER_PROC << std::endl;
+			std::cout << "Number of owned bonds per processor: " << NUM_OWNED_BONDS << std::endl;
+		}
+
 		std::vector<long long int> myOwnedNodes;
 		myOwnedNodes.reserve(NUM_OWNED_NODES_PER_PROC);
 
@@ -68,6 +73,17 @@ int main(int argc,char * argv[]) {
 		overlapMapTraditional = Teuchos::rcp(new Epetra_BlockMap(NUM_GLOBAL_NODES, NUM_OWNED_NODES_PER_PROC, myOwnedNodes.data(), element_size, index_base, EpetraComm));
 		ownedVector = Teuchos::rcp(new Epetra_Vector(*ownedMap));
 		overlapVector = Teuchos::rcp(new Epetra_Vector(*ownedMap));
+
+		if(id == 0)
+			std::cout << "Owned map: " << std::endl;
+		ownedMap->Print(std::cout);
+		if(id == 0)
+			std::cout << "Overlap map: " << std::endl;
+		overlapMapTraditional->Print(std::cout);
+
+
+
+
 
 		// We want to be careful to catch exceptions that may arise since we are using the
 		// Epetra_BlocMap in a way it was not necessarily intended to be.
@@ -131,6 +147,9 @@ int main(int argc,char * argv[]) {
 			if (Error==-4) {std::cout << "****Error, invalid NumGlobalElements. " << std::endl; MPI::Finalize(); return 1;}
 			else {std::cout << "****Error: " << Error << ", unhandled error. " << std::endl; MPI::Finalize(); return 1;}
 		}
+		if(id == 0)
+			std::cout << "Overlap duplicate map: " << std::endl;
+		overlapWdupBlockMap->Print(std::cout);
 
 		overlapWdupVector = Teuchos::rcp(new Epetra_Vector(*overlapWdupBlockMap));
 
@@ -141,15 +160,28 @@ int main(int argc,char * argv[]) {
 		Teuchos::RCP<Epetra_Import> importer = Teuchos::rcp(new Epetra_Import(*overlapWdupBlockMap, *ownedMap));
 
 		int *exportLIDs = exporter->ExportLIDs();
-		exporter->Print(std::cout);
+		//exporter->Print(std::cout);
+
+		std::cout << "Overlap with duplicates initially: " << std::endl;
+		overlapWdupVector->Print(std::cout);
+		std::cout << "Owned initially: " << std::endl;
+		ownedVector->Print(std::cout);
 
 		//overlapWdupVector->Import(*ownedVector, *importer, Epetra_CombineMode::Add);
 		localReduceAll(overlapWdupVector, cloneToMasterLID, element_size);
+
+		std::cout << "Overlap after localReduceAll: " << std::endl;
+		overlapWdupVector->Print(std::cout);
+
 		localBroadcastAll(overlapWdupVector, masterToCloneLIDs, myMasterLIDs, element_size);
+
+		std::cout << "Overlap after localReduceAll: " << std::endl;
+		overlapWdupVector->Print(std::cout);
+
 		ownedVector->Export(*overlapWdupVector, *exporter, Epetra_CombineMode::Add);
 
-		//ownedVector->Print(std::cout);
-		//overlapWdupVector->Print(std::cout);
+		std::cout << "Owned after gather from overlap: " << std::endl;
+		ownedVector->Print(std::cout);
 
     MPI::Finalize();
 		return 0;

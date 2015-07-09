@@ -1,8 +1,8 @@
-#include "main.hpp"
-#include "kernels.hpp"
+#include "data.hpp"
+//#include "kernels.hpp"
 //GLOBALS
-const int NUM_ITERATIONS(1000);
-
+//const int NUM_ITERATIONS(1000);
+/*
 enum TIMER_CATEGORY{
 	OLD_GATHER,
 	OLD_SCATTER,
@@ -36,8 +36,10 @@ void tick(TIMER_CATEGORY TIMER);
 
 void tock(TIMER_CATEGORY TIMER);
 
-void finaliseTimes();
 
+void finaliseTimes();
+*/
+/*
 bool integrityCheckOnOld(PrimaryNS::Data &data);
 
 bool integrityCheckOnNew(PrimaryNS::Data &data);
@@ -59,31 +61,30 @@ void oldFullTest(PrimaryNS::Data &data);
 void newFullTest(PrimaryNS::Data &data);
 
 void reportAverageTimes(Epetra_MpiComm &myEpetraComm);
+*/
 
 int main(int argc,char * argv[]) {
     // Initialize the MPI and Epetra communicators
-    MPI::Init ( argc, argv );
-    Epetra_MpiComm EpetraComm(MPI_COMM_WORLD );
-    const int p = MPI::COMM_WORLD.Get_size();
-    const int id = MPI::COMM_WORLD.Get_rank();
+    //MPI::Init ( argc, argv );
+    //Epetra_MpiComm EpetraComm(MPI_COMM_WORLD );
+    //const int p = MPI::COMM_WORLD.Get_size();
+    //const int id = MPI::COMM_WORLD.Get_rank();
 
+		/*
     for(auto it : timeNames){
     	accumulatedTimes[it.first] = 0.0;
     }
+		*/
 
     // Get all input parameters
     // Input file name should have been the last argument specified
-    Teuchos::RCP<Teuchos::ParameterList> masterParams = rcp(new Teuchos::ParameterList());
-    std::string inputFileName = argv[argc-1];
-    Teuchos::Ptr<Teuchos::ParameterList> mpPointer(masterParams.get());
-    Teuchos::updateParametersFromXmlFile(inputFileName, mpPointer);
-
     //Create data object(s)
-	tick(INITIALIZE_ALL);
-    PrimaryNS::Data myData( masterParams, EpetraComm, p , id);
-	std::cout << "Initialized: " << id << " of " << p << std::endl;
-	tock(INITIALIZE_ALL);
+		
+	//tick(INITIALIZE_ALL);
+	Data myData(argc, argv);
+//	tock(INITIALIZE_ALL);
 
+	/*
 		bool oldIsValid(integrityCheckOnNew(myData));
 		if(id == 0){
 			if(oldIsValid) std::cout << "Old code passes model evaluation integrity check." << std::endl;
@@ -136,13 +137,15 @@ int main(int argc,char * argv[]) {
 		else{
 			std::cout << "Rank: " << id << ", part 2 of the test cannot proceed." << std::endl;
 		}
+		*/
 
-
-    MPI::Finalize();
+		
+		//const double * yOverlap( myData->queryEpetraDictForValues("overlap_curr_coords") );
+		//std::cout << yOverlap[0] << " first element of yOverlap." << std::endl;
 
     return 0;
 }
-
+/*
 void tick(TIMER_CATEGORY TIMER){
 	timePoints[TIMER] = std::chrono::steady_clock::now();	
 }	
@@ -156,7 +159,8 @@ void finaliseTimes(){
 		accumulatedTimes[it.first] *= std::chrono::steady_clock::period::num/ std::chrono::steady_clock::period::den;  
 	}
 }
-
+*/
+/*
 bool integrityCheckOnOld(PrimaryNS::Data &data){
 	const double * xOverlap( data.queryEpetraDictForValues("overlap_orig_coords") );
 	const double * yOverlap( data.queryEpetraDictForValues("overlap_curr_coords") );
@@ -183,7 +187,8 @@ void newKernelEvalauteTest(PrimaryNS::Data &data){}
 void oldFullTest(PrimaryNS::Data &data){}
 
 void newFullTest(PrimaryNS::Data &data){}
-
+*/
+/*
 void reportAverageTimes(Epetra_MpiComm &myEpetraComm){
 	double myTime(0.0), globalSumTime(0.0);
 	for(auto it: timeNames){
@@ -196,4 +201,4 @@ void reportAverageTimes(Epetra_MpiComm &myEpetraComm){
 	}
 	
 }
-
+*/

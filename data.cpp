@@ -1,104 +1,37 @@
 #include "data.hpp"
 #include <exception>
 
-namespace PrimaryNS {
 	static int workcount(0);
 	void works(){
 		std::cout << "Works, times called: " << workcount++ << std::endl;
 	}
 
-
 // These two tokenizer methods were from user Evan Teran on Stack Overflow http://stackoverflow.com/questions/236129/split-a-string-in-c
-std::vector<std::string> & Data::split(const std::string &s, char delim, std::vector<std::string> &elems) {
-    std::stringstream ss(s);
-    std::string item;
-    while (std::getline(ss, item, delim)) {
-        elems.push_back(item);
-    }
-    return elems;
-}
+std::vector<std::string> & split(const std::string &s, char delim, std::vector<std::string> &elems); 
 
-std::vector<std::string> Data::split(const std::string &s, char delim) {
-    std::vector<std::string> elems;
-    split(s, delim, elems);
-    return elems;
-}
+std::vector<std::string> split(const std::string &s, char delim);
 
 // String to number method by user Bazzy from http://www.cplusplus.com/forum/articles/9645/
 template <typename T>
-T Data::stringToNumber ( const std::string &Text ) {
+T stringToNumber ( const std::string &Text ); 
 
-    std::stringstream ss(Text);
-    T result;
-    return ss >> result ? result : 0;
-}
-
-inline int Data::lidToGid(const int lid, const int offset, const int dimension) {
-    return lid + offset/dimension;
-}
+inline int lidToGid(const int lid, const int offset, const int dimension);
 
 // Use base-MODULE arithmetic per coordinate to cycle through coordinate combinations
-inline void Data::incrementCoordinates(std::vector<int>& NUM_OF_SOLIDS_COORD_N, std::vector<int>& coords) {
-    std::vector<int>::iterator MODULE = NUM_OF_SOLIDS_COORD_N.begin();
-    bool carried = false;
-    for(std::vector<int>::iterator axis = coords.begin(); axis != coords.end(); ++ axis, ++ MODULE) {
-        // Increment the axis whatever it is if it is less than the MODULE and this isn't a carry
-        if(*axis < *MODULE and not carried) {
-            *axis = *axis + 1;
-        }
-        // Do we propagate the increment upward or do we break?
-        if(*axis == *MODULE) {
-            // Is there any coordinate after this one to propagate to?
-            if(std::distance(coords.begin(), axis) < (coords.size() -1)) {
-                // Yeah, so carry the one
-                *axis = 0;
-                *(axis + 1) = *(axis + 1) + 1;
-                carried = true;
-            }
-            // There is not, we only get here if we try to increment past maximum coordinate
-            else {
-                std::cout << "Error, incrementCoordinates called once too many times. " << std::endl;
-            }
-        }
-        else
-            break;
-    }
-}
+inline void incrementCoordinates(std::vector<int>& NUM_OF_SOLIDS_COORD_N, std::vector<int>& coords);
 
 // Generate the n-rectangular grid, regardless of how many or how few spatial dimensions are specified
-void Data::specifyRectangularGrid(std::vector<double>& vertices, const double DOTPITCH, std::vector<int>& NUM_OF_SOLIDS_COORD_N ) {
-    const int TOTAL_VERTICES = std::accumulate(NUM_OF_SOLIDS_COORD_N.begin(), NUM_OF_SOLIDS_COORD_N.end(), 1.0, std::multiplies<int>());
-    vertices.reserve(TOTAL_VERTICES*NUM_OF_SOLIDS_COORD_N.size()); // Flat vector of n dimensional data
-    std::vector<int> coords(NUM_OF_SOLIDS_COORD_N.size(), 0); // Start at least coordinate tuple
+void specifyRectangularGrid(std::vector<double>& vertices, const double DOTPITCH, std::vector<int>& NUM_OF_SOLIDS_COORD_N );
 
-    for(int vertex = 0; vertex < TOTAL_VERTICES; ++ vertex) {
-        for(std::vector<int>::iterator coord = coords.begin(); coord != coords.end(); ++ coord) {
-            vertices.push_back(double(*coord)*DOTPITCH);
-        }
-        if(vertex < (TOTAL_VERTICES -1)) incrementCoordinates(NUM_OF_SOLIDS_COORD_N, coords);
-    }
-}
-
-Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & EpetraComm, const int p, const int id):
-	 timeSpentInitialisingData(0.0),
-	 timeSpentLocalBroadcasting(0.0),
-	 timeSpentLocalReducing(0.0),
-	 timeSpentGathering(0.0),
-	 timeSpentScattering(0.0),
-	 timeSpentOnNodeKernels(0.0),
-	 timeSpentOnBondKernels(0.0),
-	 timeSpentOnNeighborhoodKernels(0.0),
-	 timeSpentOnKernelsTotal(0.0), 
-	 timeSpentSolvingLinearSystem(0.0),
-	 timeSpentTotal(0.0),
-	 jacboianMemoryUse(0.0),
-	 additionalPreconditionerMemoryUse(0.0),
-	 overlapVectorVariableMemoryUse(0.0),
-	 overlapScalarVariableMemoryUse(0.0),
-	 epetraComm(Teuchos::rcpFromRef(EpetraComm))
+Data::Data(int argc, char ** argv):
+	 timeSpentInitialisingData(0.0)
 {
+   MPI::Init ( argc, argv );
+   const int p = MPI::COMM_WORLD.Get_size();
+   const int id = MPI::COMM_WORLD.Get_rank();
+
 	tick(INITIALISATION);
-//    epetraComm = Teuchos::rcpFromRef(EpetraComm);
+    epetraComm = Teuchos::rcp(new Epetra_MpiComm(MPI_COMM_WORLD));
     if(id ==0)
         std::cout << "MPI initialized on: " << p << " ranks." << std::endl;
 
@@ -107,6 +40,15 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
     const int ret = snprintf(buffer, sizeof(buffer), "%d", id);
     const char * procID = buffer;
     const std::string procIDString(procID);
+
+		/*
+		 *
+		 * Create masterParams from file
+		 */
+    Teuchos::RCP<Teuchos::ParameterList> masterParams = rcp(new Teuchos::ParameterList());
+    std::string inputFileName = argv[argc-1];
+    Teuchos::Ptr<Teuchos::ParameterList> mpPointer(masterParams.get());
+    Teuchos::updateParametersFromXmlFile(inputFileName, mpPointer);
 
     /*
      *
@@ -302,6 +244,7 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
         ownedNeighborhoodLengths.push_back(ownedHoodIt->size());
     }
 
+
     /*
      *
      * Create distributed connectivity descriptions
@@ -312,11 +255,10 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
     NUM_GLOBAL_NODES = verticesFlat.size()/DIMENSION_SOLIDS;
     NUM_OWNED_NODES = myGlobalOwnedIDs.size();
     NUM_OWNED_BONDS = std::accumulate(ownedNeighborhoodLengths.begin(), ownedNeighborhoodLengths.end(), 0);
-    epetraComm->SumAll(&NUM_OWNED_BONDS, &NUM_GLOBAL_BONDS, 1);
     const int index_base = 0;
 
     // Form owned maps
-    ownedBlockMapSolids = Teuchos::rcp(new Epetra_BlockMap(NUM_GLOBAL_NODES, NUM_OWNED_NODES, myGlobalOwnedIDs.data(), element_size, index_base, EpetraComm));
+    ownedBlockMapSolids = Teuchos::rcp(new Epetra_BlockMap(NUM_GLOBAL_NODES, NUM_OWNED_NODES, myGlobalOwnedIDs.data(), element_size, index_base, *epetraComm));
 
     // Form graphs
     myFECrsGraph = Teuchos::rcp(new Epetra_FECrsGraph (Copy, *ownedBlockMapSolids, ownedNeighborhoodLengths.data()));
@@ -330,7 +272,7 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
         myFECrsGraph->InsertGlobalIndices(1, &(*ownedGID), hood->size(), hood->data());
 	// For every owned neighborhood on this processor, copy all of the GIDs involved into duplicate
 	// neighbor ids.
-	duplicateNeighborGIDs.insert(duplicateNeighborGIDs.end(),hood->begin(), hood->end());
+			duplicateNeighborGIDs.insert(duplicateNeighborGIDs.end(),hood->begin(), hood->end());
     }
     myFECrsGraph->GlobalAssemble(true);
     myFECrsGraph->FillComplete();
@@ -344,7 +286,7 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 	// We want to be careful to catch exceptions that may arise since we are using the
 	// Epetra_BlocMap in a way it was not necessarily intended to be.
 		// We can avoid cluttering the main scope by putting our utility variables in this structured block.
-	 {
+	 
 		std::vector<int> myCloneLIDs;
 		myMasterLIDs.reserve(NUM_OWNED_BONDS);
 		myCloneLIDs.resize(NUM_OWNED_BONDS);
@@ -359,22 +301,18 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 		// This is needed because Epetra_BlockMap is not designed for duplication.
 	
 		try{
-			overlapBlockMapSolidsWdup = Teuchos::rcp(new Epetra_BlockMap(-1, NUM_OWNED_BONDS, duplicateNeighborGIDs.data(), element_size, index_base, EpetraComm));
+			overlapBlockMapSolidsWdup = Teuchos::rcp(new Epetra_BlockMap(-1, NUM_OWNED_BONDS, duplicateNeighborGIDs.data(), element_size, index_base, *epetraComm));
 		}
 		catch(int Error){
 			if (Error==-4) {std::cout << "****Error, invalid NumGlobalElements. " << std::endl;}
 			else {std::cout << "****Error: " << Error << ", unhandled error. " << std::endl;}
 		}
 
-		//overlapBlockMapSolidsWdup->Print(std::cout);
-
 		// Keep track of which are the master LIDs
 		// master LIDs are not necessarilly owned
 		for(auto itval : duplicateNeighborGIDs){
 			GIDtoMasterLID[itval] = overlapBlockMapSolidsWdup->LID(itval);
 			myMasterLIDs.push_back(overlapBlockMapSolidsWdup->LID(itval)); // Only one master LID per GID in the map.
-			masterToCloneLIDs[overlapBlockMapSolidsWdup->LID(itval)] = std::vector<int>(); // Register an empty vector with the master lid
-			masterToCloneLIDs[overlapBlockMapSolidsWdup->LID(itval)].reserve(duplicateNeighborGIDs.size()/myGlobalOwnedIDs.size()); 
 		}
 		std::sort(myMasterLIDs.begin(), myMasterLIDs.end());
 
@@ -402,11 +340,10 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 		// as well as master LID to clone LID multivector
 		for(auto itval: cloneLIDtoGID){
 			cloneToMasterLID.insert( std::pair<int, int>(itval.first, GIDtoMasterLID[itval.second] ));
-			masterToCloneLIDs[GIDtoMasterLID[itval.second]].push_back(itval.first);
+			masterToCloneLIDs.insert(std::pair<int, int>(GIDtoMasterLID[itval.second], itval.first));
 		}
 
-	}
-
+	
     /*
      *
      * Create the exporter and importer objects instances
@@ -454,23 +391,23 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
      */
     for(std::vector<std::string>::iterator it = OWNED_SOLIDS_VAR_NAMES.begin(); it != OWNED_SOLIDS_VAR_NAMES.end(); ++it) {
         ownedSolidsVectorIndexDict["owned_"+ *it] = std::distance(OWNED_SOLIDS_VAR_NAMES.begin(), it);
-	varNameToVarNatureDict["owned_"+*it] = OLD_SOLIDS;
-	varNameToVarRoleDict["owned_"+*it] = OWNED;
+	varNameToVarNatureDict["owned_"+*it] = 'O';
+	varNameToVarRoleDict["owned_"+*it] = 'W';
     }
    for(std::vector<std::string>::iterator it = OVERLAP_SOLIDS_VAR_NAMES.begin(); it != OVERLAP_SOLIDS_VAR_NAMES.end(); ++it) {
         overlapSolidsVectorIndexDict["overlap_"+ *it] = std::distance(OVERLAP_SOLIDS_VAR_NAMES.begin(), it);
-	varNameToVarNatureDict["overlap_"+*it] = OLD_SOLIDS;
-	varNameToVarRoleDict["overlap_"+*it] = OVERLAP;
+	varNameToVarNatureDict["overlap_"+*it] = 'O';
+	varNameToVarRoleDict["overlap_"+*it] = 'O';
     }
     for(std::vector<std::string>::iterator it = OWNED_SOLIDS_VAR_WDUP_NAMES.begin(); it != OWNED_SOLIDS_VAR_WDUP_NAMES.end(); ++it) {
         ownedSolidsVectorWdupIndexDict["owned_"+ *it] = std::distance(OWNED_SOLIDS_VAR_WDUP_NAMES.begin(), it);
-	varNameToVarNatureDict["owned_"+*it] = NEW_SOLIDS;
-	varNameToVarRoleDict["owned_"+*it] = OWNED;
+	varNameToVarNatureDict["owned_"+*it] = 'N';
+	varNameToVarRoleDict["owned_"+*it] = 'W';
     }
         for(std::vector<std::string>::iterator it = OVERLAP_SOLIDS_VAR_WDUP_NAMES.begin(); it != OVERLAP_SOLIDS_VAR_WDUP_NAMES.end(); ++it) {
         overlapSolidsVectorWdupIndexDict["overlap_"+ *it] = std::distance(OVERLAP_SOLIDS_VAR_WDUP_NAMES.begin(), it);
-	varNameToVarNatureDict["overlap_"+*it] = NEW_SOLIDS;
-	varNameToVarRoleDict["overlap_"+*it] = OVERLAP;
+	varNameToVarNatureDict["overlap_"+*it] = 'N';
+	varNameToVarRoleDict["overlap_"+*it] = 'O';
     }
 
     /*
@@ -482,13 +419,13 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
     for(std::vector<std::string>::iterator it = GLOBAL_VAR_NAMES.begin(); it != GLOBAL_VAR_NAMES.end(); ++it) {
         globalVarHashmap[*it] = 0.0;
     }
+		
 
     /*
      *
      * Initialize the orig configuration vector, and copy it into 'output', and then back into the plotting vector, demonstrating how to access simulation data using the dictionary.
      *
      */
-
 
     double *ownedOrigCoords(queryEpetraDictForValues("owned_orig_coords"));
     double *ownedCurrCoords(queryEpetraDictForValues("owned_curr_coords"));
@@ -506,6 +443,7 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 		ownedCurrCoords[std::distance(myOwnedChunkBegin, vertex)] = *(vertex)*1.5;
 		ownedCurrCoordsWdup[std::distance(myOwnedChunkBegin, vertex)] = *(vertex)*1.5;
 	}
+
 
 	tock(INITIALISATION);
 
@@ -528,9 +466,6 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 
 	std::cout << "GATHERING... " << std::endl;
 
-
-	queryEpetraDict("overlap_curr_coords_wdup")->PutScalar(1000.0);
-	
 	gather("owned_curr_coords", "overlap_curr_coords");
 	gather("owned_curr_coords_wdup", "overlap_curr_coords_wdup");
 
@@ -546,11 +481,76 @@ Data::Data(Teuchos::RCP<Teuchos::ParameterList> masterParams, Epetra_MpiComm & E
 
 	std::cout << "\noverlap_curr_coords_wdup: " << std::endl;
 	queryEpetraDict("overlap_curr_coords_wdup")->Print(std::cout);
-
-	
-
 }
 
-
-
+// These two tokenizer methods were from user Evan Teran on Stack Overflow http://stackoverflow.com/questions/236129/split-a-string-in-c
+std::vector<std::string> & split(const std::string &s, char delim, std::vector<std::string> &elems) {
+    std::stringstream ss(s);
+    std::string item;
+    while (std::getline(ss, item, delim)) {
+        elems.push_back(item);
+    }
+    return elems;
 }
+
+std::vector<std::string> split(const std::string &s, char delim) {
+    std::vector<std::string> elems;
+    split(s, delim, elems);
+    return elems;
+}
+
+// String to number method by user Bazzy from http://www.cplusplus.com/forum/articles/9645/
+template <typename T>
+T stringToNumber ( const std::string &Text ) {
+
+    std::stringstream ss(Text);
+    T result;
+    return ss >> result ? result : 0;
+}
+
+inline int lidToGid(const int lid, const int offset, const int dimension) {
+    return lid + offset/dimension;
+}
+
+// Use base-MODULE arithmetic per coordinate to cycle through coordinate combinations
+inline void incrementCoordinates(std::vector<int>& NUM_OF_SOLIDS_COORD_N, std::vector<int>& coords) {
+    std::vector<int>::iterator MODULE = NUM_OF_SOLIDS_COORD_N.begin();
+    bool carried = false;
+    for(std::vector<int>::iterator axis = coords.begin(); axis != coords.end(); ++ axis, ++ MODULE) {
+        // Increment the axis whatever it is if it is less than the MODULE and this isn't a carry
+        if(*axis < *MODULE and not carried) {
+            *axis = *axis + 1;
+        }
+        // Do we propagate the increment upward or do we break?
+        if(*axis == *MODULE) {
+            // Is there any coordinate after this one to propagate to?
+            if(std::distance(coords.begin(), axis) < (coords.size() -1)) {
+                // Yeah, so carry the one
+                *axis = 0;
+                *(axis + 1) = *(axis + 1) + 1;
+                carried = true;
+            }
+            // There is not, we only get here if we try to increment past maximum coordinate
+            else {
+                std::cout << "Error, incrementCoordinates called once too many times. " << std::endl;
+            }
+        }
+        else
+            break;
+    }
+}
+
+// Generate the n-rectangular grid, regardless of how many or how few spatial dimensions are specified
+void specifyRectangularGrid(std::vector<double>& vertices, const double DOTPITCH, std::vector<int>& NUM_OF_SOLIDS_COORD_N ) {
+    const int TOTAL_VERTICES = std::accumulate(NUM_OF_SOLIDS_COORD_N.begin(), NUM_OF_SOLIDS_COORD_N.end(), 1.0, std::multiplies<int>());
+    vertices.reserve(TOTAL_VERTICES*NUM_OF_SOLIDS_COORD_N.size()); // Flat vector of n dimensional data
+    std::vector<int> coords(NUM_OF_SOLIDS_COORD_N.size(), 0); // Start at least coordinate tuple
+
+    for(int vertex = 0; vertex < TOTAL_VERTICES; ++ vertex) {
+        for(std::vector<int>::iterator coord = coords.begin(); coord != coords.end(); ++ coord) {
+            vertices.push_back(double(*coord)*DOTPITCH);
+        }
+        if(vertex < (TOTAL_VERTICES -1)) incrementCoordinates(NUM_OF_SOLIDS_COORD_N, coords);
+    }
+}
+
