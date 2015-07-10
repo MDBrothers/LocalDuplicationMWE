@@ -95,9 +95,17 @@ void computeInternalForceLinearElasticSimplifiedOld
       e = dY - zeta;
 
 			t = zeta * e;
-			fx = t * Y_dx / dY;
-			fy = t * Y_dy / dY;
-			fz = t * Y_dz / dY;
+
+			if(dY != 0.0){
+				fx = t * Y_dx / dY;
+				fy = t * Y_dy / dY;
+				fz = t * Y_dz / dY;
+			}
+			else{
+				fx = 0.0;
+				fy = 0.0;
+				fz = 0.0;
+			}
 
 			*(fOwned+0) += fx;
 			*(fOwned+1) += fy;

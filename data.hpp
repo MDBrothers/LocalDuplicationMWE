@@ -471,7 +471,9 @@ public:
 				// are not actually the ones looked at by export, instead some clone LIDs are selected. This behavior was identified
 				// in the map_test. It just means that after reduction, the master values have to be broadcast so the arbitrary clone
 				// nodes that are actually used recieve the proper accumulated values before communication.
-				if(natureOne == 'N'){ localReduceAll(overlap, NATURE); localBroadcastAll(overlap, NATURE);}
+				if(natureOne == 'N'){ localReduceAll(overlap, NATURE);
+				 	//localBroadcastAll(overlap, NATURE); // Comparison tests reveal the extra broadcast is unnecessary
+					}
 				// Export the information from the overlap vector into the owned vector, using the Add combine mode.
 				queryEpetraDict(owned)->Export(*(queryEpetraDict(overlap)), *myExporter, Epetra_CombineMode::Add);
 			}

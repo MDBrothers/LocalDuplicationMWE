@@ -448,8 +448,10 @@ Data::Data(int argc, char ** argv):
 
 	tock(INITIALISATION);
 
-	std::cout << "SCATTERING... " << std::endl;
+	std::cout << "Filling overlap arrays: SCATTERING... " << std::endl;
+	scatter("owned_orig_coords", "overlap_orig_coords");
 	scatter("owned_curr_coords", "overlap_curr_coords");
+	scatter("owned_orig_coords_wdup", "overlap_orig_coords_wdup");
 	scatter("owned_curr_coords_wdup", "overlap_curr_coords_wdup");
 
 /*
@@ -464,14 +466,14 @@ Data::Data(int argc, char ** argv):
 
 	std::cout << "\noverlap_curr_coords_wdup: " << std::endl;
 	queryEpetraDict("overlap_curr_coords_wdup")->Print(std::cout);
-	*/
+	
 
 	std::cout << "GATHERING... " << std::endl;
 
 	gather("owned_curr_coords", "overlap_curr_coords");
 	gather("owned_curr_coords_wdup", "overlap_curr_coords_wdup");
 
-/*
+
 	std::cout << "\nowned_curr_coords: " << std::endl;
 	queryEpetraDict("owned_curr_coords")->Print(std::cout);
 
