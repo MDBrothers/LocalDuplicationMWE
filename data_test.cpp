@@ -1,7 +1,7 @@
 #include "data.hpp"
 #include "kernels.hpp"
 //GLOBALS
-const int NUM_ITERATIONS(100);
+const int NUM_ITERATIONS(3);
 
 enum TIMER_CATEGORY{
 	OLD_GATHER,
@@ -49,7 +49,7 @@ void newScatterTest(Data &data);
 
 void oldKernelEvaluateTest(Data &data);
 
-void newKernelEvalauteTest(Data &data);
+void newKernelEvaluateTest(Data &data);
 
 void oldFullTest(Data &data);
 
@@ -104,7 +104,7 @@ int main(int argc,char * argv[]) {
 			tock(OLD_KERNEL);
 
 			tick(NEW_KERNEL);
-			newKernelEvalauteTest(myData);
+			newKernelEvaluateTest(myData);
 			tock(NEW_KERNEL);
 
 			tick(OLD_FULL);
@@ -152,6 +152,7 @@ bool samenessCheck(Data &data){
 	
  computeInternalForceLinearElasticSimplifiedOld
 (
+ 	
 		xOverlap,
 		yOverlap,
 		fInternalOverlap,
@@ -170,6 +171,7 @@ bool samenessCheck(Data &data){
 
 computeInternalForceLinearElasticSimplifiedOld
 (
+ 	
 		xOverlapWdup,
 		yOverlapWdup,
 		fInternalOverlapWdup,
@@ -213,6 +215,7 @@ void newScatterTest(Data &data){
 }
 
 void oldKernelEvaluateTest(Data &data){
+
 	const double * xOverlap( data.queryEpetraDictForValues("overlap_orig_coords") );
 	const double * yOverlap( data.queryEpetraDictForValues("overlap_curr_coords") );
 	double * fInternalOverlap( data.queryEpetraDictForValues("overlap_force") );
@@ -223,6 +226,7 @@ void oldKernelEvaluateTest(Data &data){
 	for(int iteration(0); iteration < NUM_ITERATIONS; ++ iteration)
 		computeInternalForceLinearElasticSimplifiedOld
 		(
+		 
 			xOverlap,
 			yOverlap,
 			fInternalOverlap,
@@ -232,24 +236,29 @@ void oldKernelEvaluateTest(Data &data){
 		);
 }
 
-void newKernelEvalauteTest(Data &data){
+void newKernelEvaluateTest(Data &data){
+
+ const double *oldForceOwned( data.queryEpetraDictForValues("owned_force") );
 	const double * xOverlapWdup( data.queryEpetraDictForValues("overlap_orig_coords_wdup") );
 	const double * yOverlapWdup( data.queryEpetraDictForValues("overlap_curr_coords_wdup") );
 	double * fInternalOverlapWdup( data.queryEpetraDictForValues("overlap_force_wdup") );
 	const int * localIndicesWdup( data.getMyOverlapLIDsWdup() );
 	const int * neighborhoodLengthsWdup( data.getMyNeighborhoodLengths() );
+
 	const int numOwnedPoints( data.getNumMyOwnedNodes() );
 
 	for(int iteration(0); iteration < NUM_ITERATIONS; ++ iteration)
-		computeInternalForceLinearElasticSimplifiedOld
-		(
-				xOverlapWdup,
-				yOverlapWdup,
-				fInternalOverlapWdup,
-				localIndicesWdup,
-				neighborhoodLengthsWdup,
-				numOwnedPoints
-		);
+	computeInternalForceLinearElasticSimplifiedOld
+	(
+	 
+		xOverlapWdup,
+		yOverlapWdup,
+		fInternalOverlapWdup,
+		localIndicesWdup,
+		neighborhoodLengthsWdup,
+		numOwnedPoints
+	);
+
 }
 
 
@@ -266,6 +275,7 @@ void oldFullTest(Data &data){
  		data.scatter("overlap_orig_coords", "owned_orig_coords");
 		computeInternalForceLinearElasticSimplifiedOld
 		(
+		 
 			xOverlap,
 			yOverlap,
 			fInternalOverlap,
@@ -289,6 +299,7 @@ void newFullTest(Data &data){
  		data.scatter("overlap_orig_coords_wdup", "owned_orig_coords_wdup");
 		computeInternalForceLinearElasticSimplifiedOld
 		(
+		 		
 				xOverlapWdup,
 				yOverlapWdup,
 				fInternalOverlapWdup,

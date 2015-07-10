@@ -57,7 +57,7 @@ Data::Data(int argc, char ** argv):
      */
     // Get the model geometry parameters from the parameter list, adapting to 1 to N spatial dimensions and 0 to N extended dimensions
     Teuchos::RCP<Teuchos::ParameterList> geometryParams = Teuchos::rcpFromRef( masterParams->sublist("Geometry", true));
-    std::vector<std::string> SPACESHAPE_STRING_VEC = split(geometryParams->get<std::string>("DIMENSIONS_SPATIAL_AND_PLACEHOLDER", "20,20,20"), ',');
+    std::vector<std::string> SPACESHAPE_STRING_VEC = split(geometryParams->get<std::string>("DIMENSIONS_SPATIAL_AND_PLACEHOLDER", "30,30,30"), ',');
     std::vector<int> SPACESHAPE;
     SPACESHAPE.reserve(SPACESHAPE_STRING_VEC.size());
 
@@ -72,7 +72,7 @@ Data::Data(int argc, char ** argv):
 
 		// How dense is our uniform discretization?
     DOTPITCH = geometryParams->get<double>("DOTPITCH", 1.0); // The distance between points on the regular grid, those points differing by a single coordinate value
-    HORIZON = geometryParams->get<double>("HORIZON", 3.1); // The radius used for neighborhood building and model evaluation
+    HORIZON = geometryParams->get<double>("HORIZON", 31.0); // The radius used for neighborhood building and model evaluation
 
 		// Given the density of our discretization and the measurements of the rectangular prismatic body, how many nodes
 		// do we count along each of the x, y and z axes?

@@ -80,10 +80,12 @@ void computeInternalForceLinearElasticSimplifiedOld
 		const double *X = xOwned;
 		const double *Y = yOwned;
 
-		for(int n=0;n<numNeigh;n++,neighPtr++){
+		neighPtr++;
+		for(int n=1;n<numNeigh;n++,neighPtr++){
 			int localId = *neighPtr;
 			const double *XP = &xOverlap[3*localId];
 			const double *YP = &yOverlap[3*localId];
+
 			X_dx = XP[0]-X[0];
 			X_dy = XP[1]-X[1];
 			X_dz = XP[2]-X[2];
@@ -96,16 +98,9 @@ void computeInternalForceLinearElasticSimplifiedOld
 
 			t = zeta * e;
 
-			if(dY != 0.0){
-				fx = t * Y_dx / dY;
-				fy = t * Y_dy / dY;
-				fz = t * Y_dz / dY;
-			}
-			else{
-				fx = 0.0;
-				fy = 0.0;
-				fz = 0.0;
-			}
+			fx = t * Y_dx / dY;
+			fy = t * Y_dy / dY;
+			fz = t * Y_dz / dY;
 
 			*(fOwned+0) += fx;
 			*(fOwned+1) += fy;

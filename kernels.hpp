@@ -54,4 +54,3 @@ void computeInternalForceLinearElasticSimplifiedOld
 		const int* __restrict__ neighborhoodLengths,
 		const int numOwnedPoints
 );
-

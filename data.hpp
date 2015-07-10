@@ -219,6 +219,10 @@ public:
 		const int* getMyOverlapLIDsWdup(){
 			return &myOverlapLIDsWdup[0];
 		}
+		const int getNumMyBonds(){
+			return std::accumulate(ownedNeighborhoodLengths.begin(), ownedNeighborhoodLengths.end(), 0);
+		}
+
 
 		/*
 		 * Plotting accessors. TODO: make plot3d method compatible with constant vectors.
@@ -401,8 +405,8 @@ public:
 				// Import the information from the owned vector into the overlap vector.
 				queryEpetraDict(overlap)->Import(*(queryEpetraDict(owned)), *myImporter, Epetra_CombineMode::Insert);
 				// Perform local broadcast since Import modified only one local clone, called the master.
-				if(natureOne == 'N')
-				localBroadcastAll(overlap, NATURE);
+			//	if(natureOne == 'N')
+			//	localBroadcastAll(overlap, NATURE);
 			}
 
 
@@ -465,15 +469,15 @@ public:
 						std::cout << "**** Error in Data::gather(...), unknown VARIABLE_NATURE specified." << std::endl;
 				}	
 
-				// Before we Export the force value after a force force evaluation for all neighborhoods, we call localReduceAll so that 
+				// Before we Export the force value after a force force evaluation for all ne/ighborhoods, we call localReduceAll so that 
 				// the neighbor reactions are correctly summed into the force vector entries that correspond to the master local indices 
 		                // from the clone local indices. In an undesirable behavior in Epetra_Export, the master LIDs determined by the GIDs
 				// are not actually the ones looked at by export, instead some clone LIDs are selected. This behavior was identified
 				// in the map_test. It just means that after reduction, the master values have to be broadcast so the arbitrary clone
 				// nodes that are actually used recieve the proper accumulated values before communication.
-				if(natureOne == 'N'){ localReduceAll(overlap, NATURE);
+				//if(natureOne == 'N'){ localReduceAll(overlap, NATURE);
 				 	//localBroadcastAll(overlap, NATURE); // Comparison tests reveal the extra broadcast is unnecessary
-					}
+				//	}
 				// Export the information from the overlap vector into the owned vector, using the Add combine mode.
 				queryEpetraDict(owned)->Export(*(queryEpetraDict(overlap)), *myExporter, Epetra_CombineMode::Add);
 			}
