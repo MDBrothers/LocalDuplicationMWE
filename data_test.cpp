@@ -1,8 +1,8 @@
 #include "data.hpp"
-//#include "kernels.hpp"
+#include "kernels.hpp"
 //GLOBALS
-//const int NUM_ITERATIONS(1000);
-/*
+const int NUM_ITERATIONS(1000);
+
 enum TIMER_CATEGORY{
 	OLD_GATHER,
 	OLD_SCATTER,
@@ -36,68 +36,56 @@ void tick(TIMER_CATEGORY TIMER);
 
 void tock(TIMER_CATEGORY TIMER);
 
-
 void finaliseTimes();
-*/
-/*
-bool integrityCheckOnOld(PrimaryNS::Data &data);
 
-bool integrityCheckOnNew(PrimaryNS::Data &data);
+bool samenessCheck(Data &data);
 
-void oldGatherTest(PrimaryNS::Data &data);
+void oldGatherTest(Data &data);
 
-void newGatherTest(PrimaryNS::Data &data);
+void newGatherTest(Data &data);
 
-void oldScatterTest(PrimaryNS::Data &data);
+void oldScatterTest(Data &data);
 
-void newScatterTest(PrimaryNS::Data &data);
+void newScatterTest(Data &data);
 
-void oldKernelEvaluateTest(PrimaryNS::Data &data);
+void oldKernelEvaluateTest(Data &data);
 
-void newKernelEvalauteTest(PrimaryNS::Data &data);
+void newKernelEvalauteTest(Data &data);
 
-void oldFullTest(PrimaryNS::Data &data);
+void oldFullTest(Data &data);
 
-void newFullTest(PrimaryNS::Data &data);
+void newFullTest(Data &data);
 
-void reportAverageTimes(Epetra_MpiComm &myEpetraComm);
-*/
+void reportAverageTimes(Data &data);
 
 int main(int argc,char * argv[]) {
-    // Initialize the MPI and Epetra communicators
-    //MPI::Init ( argc, argv );
-    //Epetra_MpiComm EpetraComm(MPI_COMM_WORLD );
-    //const int p = MPI::COMM_WORLD.Get_size();
-    //const int id = MPI::COMM_WORLD.Get_rank();
-
-		/*
     for(auto it : timeNames){
     	accumulatedTimes[it.first] = 0.0;
     }
-		*/
 
     // Get all input parameters
     // Input file name should have been the last argument specified
     //Create data object(s)
 		
-	//tick(INITIALIZE_ALL);
+	tick(INITIALIZE_ALL);
 	Data myData(argc, argv);
-//	tock(INITIALIZE_ALL);
+	tock(INITIALIZE_ALL);
+		int id = myData.getMyEpetraComm()->MyPID();
+		int p = myData.getMyEpetraComm()->NumProc();
 
-	/*
-		bool oldIsValid(integrityCheckOnNew(myData));
+	
+		
+		bool resultsAreSame(samenessCheck(myData));
+
+		bool allResultsAreSame(true);
+
+		MPI_Allreduce(&resultsAreSame, &allResultsAreSame, 1, MPI::BOOL, MPI::LAND, myData.getMyEpetraComm()->Comm());
 		if(id == 0){
-			if(oldIsValid) std::cout << "Old code passes model evaluation integrity check." << std::endl;
-			else std::cout << "Old code does not pass model evaluation integrity check." << std::endl;
+			if(allResultsAreSame){ std::cout << "Kernel evaluation gives same answer for either communication strategy." << std::endl;}
+			else {std::cout << "Kernel evaluation gives different answers for the difference communication strategies." << std::endl;}
 		}
 
-		bool newIsValid(integrityCheckOnOld(myData));
-		if(id == 0){
-			if(newIsValid) std::cout << "New code passes model evaluation integrity check." << std::endl;
-			else std::cout << "New code does not pass model evaluation integrity check." << std::endl;
-		}
-
-		if(oldIsValid and newIsValid){
+		if(allResultsAreSame){
 			tick(OLD_GATHER);
 			oldGatherTest(myData);
 			tock(OLD_GATHER);
@@ -132,20 +120,18 @@ int main(int argc,char * argv[]) {
 
 			finaliseTimes();
 
-			reportAverageTimes(EpetraComm);
+			reportAverageTimes(myData);
 		}
 		else{
 			std::cout << "Rank: " << id << ", part 2 of the test cannot proceed." << std::endl;
 		}
-		*/
-
 		
-		//const double * yOverlap( myData->queryEpetraDictForValues("overlap_curr_coords") );
-		//std::cout << yOverlap[0] << " first element of yOverlap." << std::endl;
+		const double * yOverlap( myData.queryEpetraDictForValues("overlap_curr_coords") );
+		std::cout << yOverlap[0] << " first element of yOverlap." << std::endl;
 
     return 0;
 }
-/*
+
 void tick(TIMER_CATEGORY TIMER){
 	timePoints[TIMER] = std::chrono::steady_clock::now();	
 }	
@@ -159,46 +145,70 @@ void finaliseTimes(){
 		accumulatedTimes[it.first] *= std::chrono::steady_clock::period::num/ std::chrono::steady_clock::period::den;  
 	}
 }
-*/
-/*
-bool integrityCheckOnOld(PrimaryNS::Data &data){
+
+bool samenessCheck(Data &data){
 	const double * xOverlap( data.queryEpetraDictForValues("overlap_orig_coords") );
 	const double * yOverlap( data.queryEpetraDictForValues("overlap_curr_coords") );
 	double * fInternalOverlap( data.queryEpetraDictForValues("overlap_force") );
-	const int * localIndices;
-	const int * neighborhoodLengths;
+	const int * localIndices( data.getMyOverlapLIDs() );
+	const int * neighborhoodLengths( data.getMyNeighborhoodLengths() );
+	const int numOwnedPoints( data.getNumMyOwnedNodes() );
 
-return false;}
+ computeInternalForceLinearElasticSimplifiedOld
+(
+		xOverlap,
+		yOverlap,
+		fInternalOverlap,
+		localIndices,
+		neighborhoodLengths,
+		numOwnedPoints
+);
 
-bool integrityCheckOnNew(PrimaryNS::Data &data){return false;}
 
-void oldGatherTest(PrimaryNS::Data &data){}
+	const double * xOverlapWdup( data.queryEpetraDictForValues("overlap_orig_coords_wdup") );
+	const double * yOverlapWdup( data.queryEpetraDictForValues("overlap_curr_coords_wdup") );
+	double * fInternalOverlapWdup( data.queryEpetraDictForValues("overlap_force_wdup") );
+	const int * localIndicesWdup( data.getMyOverlapLIDsWdup() );
+	const int * neighborhoodLengthsWdup( data.getMyNeighborhoodLengths() );
 
-void newGatherTest(PrimaryNS::Data &data){}
+computeInternalForceLinearElasticSimplifiedOld
+(
+		xOverlapWdup,
+		yOverlapWdup,
+		fInternalOverlapWdup,
+		localIndicesWdup,
+		neighborhoodLengthsWdup,
+		numOwnedPoints
+);
 
-void oldScatterTest(PrimaryNS::Data &data){}
+	
+	return false;}
 
-void newScatterTest(PrimaryNS::Data &data){}
+void oldGatherTest(Data &data){}
 
-void oldKernelEvaluateTest(PrimaryNS::Data &data){}
+void newGatherTest(Data &data){}
 
-void newKernelEvalauteTest(PrimaryNS::Data &data){}
+void oldScatterTest(Data &data){}
 
-void oldFullTest(PrimaryNS::Data &data){}
+void newScatterTest(Data &data){}
 
-void newFullTest(PrimaryNS::Data &data){}
-*/
-/*
-void reportAverageTimes(Epetra_MpiComm &myEpetraComm){
+void oldKernelEvaluateTest(Data &data){}
+
+void newKernelEvalauteTest(Data &data){}
+
+void oldFullTest(Data &data){}
+
+void newFullTest(Data &data){}
+
+void reportAverageTimes(Data &data){
 	double myTime(0.0), globalSumTime(0.0);
 	for(auto it: timeNames){
 		myTime = accumulatedTimes[it.first];  
 		globalSumTime = 0.0;
-		myEpetraComm.SumAll(&myTime, &globalSumTime, 1);
-		if(myEpetraComm.MyPID() == 0) std::cout << "Average " << timeNames[it.first] << 
+		data.getMyEpetraComm()->SumAll(&myTime, &globalSumTime, 1);
+		if(data.getMyEpetraComm()->MyPID() == 0) std::cout << "Average " << timeNames[it.first] << 
 		" time per iteration, averaged over all processors\n was: " << 
-		(globalSumTime/myEpetraComm.NumProc())/NUM_ITERATIONS << std::endl;
+		(globalSumTime/data.getMyEpetraComm()->NumProc())/NUM_ITERATIONS << std::endl;
 	}
 	
 }
-*/

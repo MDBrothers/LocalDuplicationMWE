@@ -57,7 +57,7 @@ Data::Data(int argc, char ** argv):
      */
     // Get the model geometry parameters from the parameter list, adapting to 1 to N spatial dimensions and 0 to N extended dimensions
     Teuchos::RCP<Teuchos::ParameterList> geometryParams = Teuchos::rcpFromRef( masterParams->sublist("Geometry", true));
-    std::vector<std::string> SPACESHAPE_STRING_VEC = split(geometryParams->get<std::string>("DIMENSIONS_SPATIAL_AND_PLACEHOLDER", "12"), ',');
+    std::vector<std::string> SPACESHAPE_STRING_VEC = split(geometryParams->get<std::string>("DIMENSIONS_SPATIAL_AND_PLACEHOLDER", "20,20,20"), ',');
     std::vector<int> SPACESHAPE;
     SPACESHAPE.reserve(SPACESHAPE_STRING_VEC.size());
 
@@ -67,12 +67,12 @@ Data::Data(int argc, char ** argv):
     }
 
 		// How many degrees of freedom per vector element?
-    DIMENSION_SOLIDS = geometryParams->get<int>("NUM_SOLIDS_DIMENSIONS", 1); // How many of the N_CUBE_DIMENSIONS are position related?
+    DIMENSION_SOLIDS = geometryParams->get<int>("NUM_SOLIDS_DIMENSIONS", 3); // How many of the N_CUBE_DIMENSIONS are position related?
     DIMENSION_TOTAL = SPACESHAPE_STRING_VEC.size();
 
 		// How dense is our uniform discretization?
     DOTPITCH = geometryParams->get<double>("DOTPITCH", 1.0); // The distance between points on the regular grid, those points differing by a single coordinate value
-    HORIZON = geometryParams->get<double>("HORIZON", 1.1); // The radius used for neighborhood building and model evaluation
+    HORIZON = geometryParams->get<double>("HORIZON", 3.1); // The radius used for neighborhood building and model evaluation
 
 		// Given the density of our discretization and the measurements of the rectangular prismatic body, how many nodes
 		// do we count along each of the x, y and z axes?
@@ -310,24 +310,25 @@ Data::Data(int argc, char ** argv):
 
 		// Keep track of which are the master LIDs
 		// master LIDs are not necessarilly owned
+		// also, get LIDs for traditional overlap vector
+		myOverlapLIDs.reserve(duplicateNeighborGIDs.size());
 		for(auto itval : duplicateNeighborGIDs){
 			GIDtoMasterLID[itval] = overlapBlockMapSolidsWdup->LID(itval);
 			myMasterLIDs.push_back(overlapBlockMapSolidsWdup->LID(itval)); // Only one master LID per GID in the map.
+			myOverlapLIDs.push_back(myFECrsGraph->ColMap().LID(itval));
 		}
 		std::sort(myMasterLIDs.begin(), myMasterLIDs.end());
 
-		std::vector<int> myLIDs;
-		myLIDs.reserve(overlapBlockMapSolidsWdup->NumMyElements());
+		myOverlapLIDsWdup.reserve(overlapBlockMapSolidsWdup->NumMyElements());
 		// Determine the basic lists of LIDs on this processor
 		for(int LID(0); LID<overlapBlockMapSolidsWdup->NumMyElements(); ++ LID){
-			myLIDs.push_back(LID);
+			myOverlapLIDsWdup.push_back(LID);
 			eachLIDtoGID.insert( std::pair<int, int>(LID, duplicateNeighborGIDs[LID]) );
 		}
-		std::sort(myLIDs.begin(), myLIDs.end());
-
+		std::sort(myOverlapLIDsWdup.begin(), myOverlapLIDsWdup.end());
 
 		// Identify which of all of the LIDs are clones, that is, not master.
-		std::vector<int>::iterator difit = std::set_difference(myLIDs.begin(), myLIDs.end(), myMasterLIDs.begin(), myMasterLIDs.end(), myCloneLIDs.begin());
+		std::vector<int>::iterator difit = std::set_difference(myOverlapLIDsWdup.begin(), myOverlapLIDsWdup.end(), myMasterLIDs.begin(), myMasterLIDs.end(), myCloneLIDs.begin());
 		myCloneLIDs.resize(difit - myCloneLIDs.begin());
 
 
@@ -451,7 +452,7 @@ Data::Data(int argc, char ** argv):
 	scatter("owned_curr_coords", "overlap_curr_coords");
 	scatter("owned_curr_coords_wdup", "overlap_curr_coords_wdup");
 
-
+/*
 	std::cout << "\nowned_curr_coords: " << std::endl;
 	queryEpetraDict("owned_curr_coords")->Print(std::cout);
 
@@ -463,13 +464,14 @@ Data::Data(int argc, char ** argv):
 
 	std::cout << "\noverlap_curr_coords_wdup: " << std::endl;
 	queryEpetraDict("overlap_curr_coords_wdup")->Print(std::cout);
+	*/
 
 	std::cout << "GATHERING... " << std::endl;
 
 	gather("owned_curr_coords", "overlap_curr_coords");
 	gather("owned_curr_coords_wdup", "overlap_curr_coords_wdup");
 
-
+/*
 	std::cout << "\nowned_curr_coords: " << std::endl;
 	queryEpetraDict("owned_curr_coords")->Print(std::cout);
 
@@ -481,6 +483,7 @@ Data::Data(int argc, char ** argv):
 
 	std::cout << "\noverlap_curr_coords_wdup: " << std::endl;
 	queryEpetraDict("overlap_curr_coords_wdup")->Print(std::cout);
+	*/
 }
 
 // These two tokenizer methods were from user Evan Teran on Stack Overflow http://stackoverflow.com/questions/236129/split-a-string-in-c

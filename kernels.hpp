@@ -45,19 +45,6 @@
 // ************************************************************************
 //@HEADER
 
-
-void computeInternalForceLinearElasticSimplifiedNew
-(
-		const double* __restrict__ xOverlap,
-		const double* __restrict__ yOverlap,
-		double* __restrict__ fInternalOverlap,
-		double* __restrict__ fReactionsOverlap,
-		const int* __restrict__ localIndexList,
-		const int* __restrict__ neighborhoodLengths,
-		const int numOwnedPoints
-);
-
-
 void computeInternalForceLinearElasticSimplifiedOld
 (
 		const double* __restrict__ xOverlap,

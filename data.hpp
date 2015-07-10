@@ -20,6 +20,7 @@
 #include <chrono>
 #include <tuple>
 #include <unordered_map>
+#include <exception>
 
 // NOX Objects
 #include "NOX.H"
@@ -144,7 +145,7 @@ private:
 		/*
      * Communication (keeping public until otherwise necessary)
      */
-    Teuchos::RCP<Epetra_Comm> epetraComm;
+    Teuchos::RCP<Epetra_MpiComm> epetraComm;
 	
     /*
      * Geometry
@@ -184,6 +185,8 @@ private:
      * Local connectivity
      */
     std::vector<int> myGlobalOwnedIDs;
+		std::vector<int> myOverlapLIDs;
+		std::vector<int> myOverlapLIDsWdup;
     std::vector<int> ownedNeighborhoodLengths;
     std::vector<std::vector<int> > ownedNeighborhoods;
 
@@ -200,6 +203,22 @@ private:
     std::vector<std::vector<int> > flannLocalNeighborhoods;
 
 public:
+
+		const int getNumMyOwnedNodes(){
+			return myGlobalOwnedIDs.size();
+		}
+		const int* getMyGlobalOwnedIDs(){
+			return &myGlobalOwnedIDs[0];
+		}
+		const int* getMyNeighborhoodLengths(){
+			return &ownedNeighborhoodLengths[0];
+		}
+		const int* getMyOverlapLIDs(){
+			return &myOverlapLIDs[0];
+		}
+		const int* getMyOverlapLIDsWdup(){
+			return &myOverlapLIDsWdup[0];
+		}
 
 		/*
 		 * Plotting accessors. TODO: make plot3d method compatible with constant vectors.
@@ -525,7 +544,7 @@ public:
      * Accessors
      *
      */
-    Teuchos::RCP<Epetra_Comm> getEpetraComm() {
+    Teuchos::RCP<Epetra_MpiComm> getMyEpetraComm() {
         return epetraComm;
     };
 
@@ -536,52 +555,55 @@ public:
 	
 	int index(-99);
 
-	switch(roleOne){
-		case 'W':
-			switch(natureOne){
-				case 'N':
-					myIndexMapIterator = ownedSolidsVectorWdupIndexDict.find(varName);
-					if(myIndexMapIterator != ownedSolidsVectorWdupIndexDict.end()){
-						index = myIndexMapIterator->second;
-						return (*ownedSolidsMultiVectorWdup)(index)->Values();
-					}
+	try{
+		switch(roleOne){
+			case 'W':
+				switch(natureOne){
+					case 'N':
+						myIndexMapIterator = ownedSolidsVectorWdupIndexDict.find(varName);
+						if(myIndexMapIterator != ownedSolidsVectorWdupIndexDict.end()){
+							index = myIndexMapIterator->second;
+							return (*ownedSolidsMultiVectorWdup)(index)->Values();
+						}
+						throw -1;
+						break;
+					case 'O':
+						myIndexMapIterator = ownedSolidsVectorIndexDict.find(varName);
+						if(myIndexMapIterator != ownedSolidsVectorIndexDict.end()){
+							index = myIndexMapIterator->second;
+							return (*overlapSolidsMultiVector)(index)->Values();
+						}
+					throw -1;
 					break;
-				case 'O':
-					myIndexMapIterator = ownedSolidsVectorIndexDict.find(varName);
-					if(myIndexMapIterator != ownedSolidsVectorIndexDict.end()){
-						index = myIndexMapIterator->second;
-						return (*overlapSolidsMultiVector)(index)->Values();
-					}
+				}
 				break;
-				default:
-				std::cout << "**** Error in Data::queryEpetraDictForValues(...), VARIABLE_NATURE invalid or not well defined for " << varName << std::endl;
-			}
-			break;
-		case 'O':
-			switch(natureOne){
-				case 'N':
-					myIndexMapIterator = overlapSolidsVectorWdupIndexDict.find(varName);
-					if(myIndexMapIterator != overlapSolidsVectorWdupIndexDict.end()){
-						index = myIndexMapIterator->second;
-						return (*overlapSolidsMultiVectorWdup)(index)->Values();
-					}
-					break;
 			case 'O':
-					myIndexMapIterator = overlapSolidsVectorIndexDict.find(varName);
-					if(myIndexMapIterator != overlapSolidsVectorIndexDict.end()){
-						index = myIndexMapIterator->second;
-						return (*overlapSolidsMultiVector)(index)->Values();
-					}
-					break;
-				default:
-					std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_NATURE invalid or not well defined for " << varName << std::endl;
+				switch(natureOne){
+					case 'N':
+						myIndexMapIterator = overlapSolidsVectorWdupIndexDict.find(varName);
+						if(myIndexMapIterator != overlapSolidsVectorWdupIndexDict.end()){
+							index = myIndexMapIterator->second;
+							return (*overlapSolidsMultiVectorWdup)(index)->Values();
+						}
+						throw -1;
+						break;
+				case 'O':
+						myIndexMapIterator = overlapSolidsVectorIndexDict.find(varName);
+						if(myIndexMapIterator != overlapSolidsVectorIndexDict.end()){
+							index = myIndexMapIterator->second;
+							return (*overlapSolidsMultiVector)(index)->Values();
+						}
+						throw -1;
+						break;
+				}
+				throw -1;
+				break;
 			}
-			break;
-		default:
-			std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_ROLE invalid or not well defined for " << varName << std::endl;
-	}
-	}
-
+		}
+		catch(int error){
+			std::cout << "**** Error in Data::queryEpetraDict(...), " << varName << " was not found!" << std::endl;
+		}
+};
 
 private:
 
@@ -636,7 +658,7 @@ private:
 		default:
 			std::cout << "**** Error in Data::queryEpetraDict(...), VARIABLE_ROLE invalid or not well defined for " << varName << std::endl;
 	}
-    };
+};
 
 public:
     /*
